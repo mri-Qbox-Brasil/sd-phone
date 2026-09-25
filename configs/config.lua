@@ -5,7 +5,7 @@
 
 local config = {
     -- Locale file under `locales/<Locale>.json`. Falls back to `en` if missing.
-    Locale = 'en',
+    Locale = 'pt',
 
     -- Keep the screen left-to-right even when the language reads right-to-left.
     -- Arabic mirrors the whole interface by default, the way an Arabic iPhone does.

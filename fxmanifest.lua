@@ -14,6 +14,7 @@ shared_scripts {
 
 client_scripts {
     'bridge/client/init.lua',
+    'mri/client/keybind.lua',
     'client/main.lua',
 }
 
