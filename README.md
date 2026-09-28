@@ -3,27 +3,24 @@
 # sd-phone
 
 <a href="https://www.youtube.com/watch?v=65EoH00dlhw">
-  <img width="760" alt="Watch the sd-phone preview" src="https://img.youtube.com/vi/65EoH00dlhw/maxresdefault.jpg">
+  <img width="960" alt="sd-phone banner showing Home, Maps and Wallet" src="docs/previews/sd-phone-banner.webp">
 </a>
 
-<sub>▶ **[Watch the preview](https://www.youtube.com/watch?v=65EoH00dlhw)**</sub>
+<sub>▶ **[Video demo](https://www.youtube.com/watch?v=65EoH00dlhw)**</sub>
 
-### Try it right now, in your browser
+### Browser demo
 
 [![Open the live demo](https://img.shields.io/badge/%E2%96%B6%20%20OPEN%20THE%20LIVE%20DEMO-fivem.samueldev.shop%2Fphone-F0E155?style=for-the-badge&labelColor=101114&logoColor=F0E155)](https://fivem.samueldev.shop/phone)
 
-**The real phone and tablet running on sample data. No download, no server, nothing to install.**
-Unlock it, rearrange the home screen, install apps from the App Store, open the police terminal, take it fullscreen.
+The phone and tablet UIs run here with sample data. Unlock the phone, move apps around, install apps, open the police terminal or use fullscreen. Nothing to install.
 
 <sub>[fivem.samueldev.shop/phone](https://fivem.samueldev.shop/phone)</sub>
 
 ---
 
-**An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE, ESX, ox_core and ND. 49 server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
+sd-phone is a FiveM phone for QBOX, QBCORE, ESX, ox_core and ND. It includes calls, messages, mail, maps, banking, photos, social apps and games. Apps use server data and their own accounts where needed. The camera shows the game world. Phone props come in eight colours and match the on-screen frame. Unique phones and SIM cards are optional; each phone item can keep its own number and data.
 
-**A drop-in replacement for lb-phone, qs-smartphone, gksphone, roadphone and YSeries.** Scripts and custom apps written against any of them keep running unmodified: their exports answer and their events fire, so nothing has to be rewritten. And if you are coming from lb-phone or YSeries, a migration carries your players across rather than resetting them: their numbers, contacts, messages, mail, photos, wallet history and social accounts, right down to the app logins, so they open the phone already signed in. Unique phones included - every phone item keeps the number and the data it had, without anyone's inventory being rewritten.
-
-If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are always welcome.
+Scripts and custom apps written for lb-phone, qs-smartphone, gksphone, roadphone or YSeries can keep using their old exports and events. For lb-phone and YSeries, the import can bring over numbers, chats, photos, wallet history, social logins and more.
 
 [![Release](https://img.shields.io/github/v/release/Samuels-Development/sd-phone?label=Release&logo=github)](https://github.com/Samuels-Development/sd-phone)
 [![Downloads](https://img.shields.io/github/downloads/Samuels-Development/sd-phone/total?label=Downloads&logo=github)](https://github.com/Samuels-Development/sd-phone/releases)
@@ -38,6 +35,24 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 [**Live demo**](https://fivem.samueldev.shop/phone) · [**Documentation**](https://docs.samueldev.shop/resources/phone/) · [**Store**](https://fivem.samueldev.shop) · [**Discord**](https://discord.gg/FzPehMQaBQ)
 
 </div>
+
+---
+
+## Screenshots
+
+Captured from the browser demo using sample data. Click an image for the full 1920×1080 version.
+
+<p align="center"><a href="docs/previews/01-home-messages.webp"><img src="docs/previews/01-home-messages.webp" alt="Home and Messages" width="960" /></a></p>
+
+<p align="center"><a href="docs/previews/02-social-apps.webp"><img src="docs/previews/02-social-apps.webp" alt="Photogram and Squawk" width="960" /></a></p>
+
+<p align="center"><a href="docs/previews/03-maps-ryde.webp"><img src="docs/previews/03-maps-ryde.webp" alt="Maps and Ryde" width="960" /></a></p>
+
+<p align="center"><a href="docs/previews/04-banking-marketplace.webp"><img src="docs/previews/04-banking-marketplace.webp" alt="Wallet and Marketplace" width="960" /></a></p>
+
+<p align="center"><a href="docs/previews/05-weather-health-services.webp"><img src="docs/previews/05-weather-health-services.webp" alt="Weather, Health and Services" width="960" /></a></p>
+
+<p align="center"><a href="docs/previews/06-fold-maps.webp"><img src="docs/previews/06-fold-maps.webp" alt="Maps on the opened fold screen" width="960" /></a></p>
 
 ---
 
@@ -64,20 +79,6 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 > read it. No pairing, no sync, no second phone to configure.
 >
 > It is a companion resource and needs sd-phone to run. [More below](#companion-sd-tablet).
-
-## Preview
-
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/c1300d66-6530-47d4-ad02-676646b96fc7" />
-
-<img width="1920" height="1280" alt="image" src="https://github.com/user-attachments/assets/f39c874c-f52d-430b-94af-41a45ada560a" />
-
-<img width="1920" height="1280" alt="image" src="https://github.com/user-attachments/assets/6f4998d2-5c7b-4a50-9af8-5b28053d2709" />
-
-<img width="1920" height="1080" alt="bb6" src="https://github.com/user-attachments/assets/9234cba8-6293-4a9b-8f5a-372eb97c88af" />
-
-<img width="1920" height="1080" alt="THIS" src="https://github.com/user-attachments/assets/7c9ee63d-a5d6-42ee-8664-a62e06838741" />
-
-<img width="1920" height="1080" alt="mb3" src="https://github.com/user-attachments/assets/896f0a95-2077-405f-b494-17ffbc13684e" />
 
 ## Powered by Fivemanage
 
@@ -244,7 +245,7 @@ Players can also open the phone with a keybind (<kbd>F1</kbd> by default), which
 
 The Racing app is unlocked separately by a `racing_usb` item, consumed on use. Drop the `requires` line from its row in `configs/apps.lua` to hand it to everyone instead.
 
-Running unique phones with physical SIM trays (`SimTray` in `configs/uniqueandsim.lua`, ox_inventory only)? Give every phone item a `buttons` entry so players can open its tray:
+Running unique phones with physical SIM trays (`SimTray` in `configs/uniqueandsim.lua`, ox_inventory or one_inventory)? On one_inventory the **SIM Tray** button is added to every phone item for you. On ox_inventory, give every phone item a `buttons` entry so players can open its tray:
 
 ```lua
 buttons = {

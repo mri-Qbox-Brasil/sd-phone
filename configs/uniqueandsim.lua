@@ -31,7 +31,7 @@
 --
 -- Backend support: reading/writing per-slot item metadata is required. Supported out of the box:
 --   * ox_inventory                        (metadata mode, or the physical SIM-tray mode below)
---   * one_inventory                       (metadata mode)
+--   * one_inventory                       (metadata mode, or the physical SIM-tray mode below)
 --   * qb-inventory / ps / lj              (metadata mode via the QBCore item `info` table)
 --   * qs(-pro) / tgiann / codem / origen  (metadata mode)
 --   * jaksam                              (metadata mode)
@@ -66,10 +66,11 @@ return {
     -- export (character-bound or hardcoded numbers) produce usable SIMs.
     ActivateBlankSims = true,
 
-    -- ox_inventory only: give every phone item a 1-slot "SIM tray" instead of writing the number
-    -- onto the phone item. Using the phone opens the phone UI as normal; the tray is a separate
-    -- right-click button players drag the SIM in and out of. That button has to be declared on
-    -- the phone item in ox_inventory/data/items.lua (see README - "Unique Phones & SIM Cards"):
+    -- ox_inventory or one_inventory: give every phone item a 1-slot "SIM tray" instead of writing
+    -- the number onto the phone item. Using the phone opens the phone UI as normal; the tray is a
+    -- separate right-click button players drag the SIM in and out of. one_inventory gets that
+    -- button automatically. On ox_inventory it has to be declared on the phone item in
+    -- ox_inventory/data/items.lua (see README - "Unique Phones & SIM Cards"):
     --
     --   buttons = {
     --       { label = 'SIM Tray', action = function(slot) exports['sd-phone']:openSimTray(slot) end },

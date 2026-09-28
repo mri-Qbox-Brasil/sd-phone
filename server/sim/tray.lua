@@ -5,19 +5,32 @@ local bridge = require 'bridge.server.inventory'
 ---@type table Shared server helpers (server.util): random id generation.
 local util   = require 'server.util'
 
----@type table Tray module; the table returned at end of file. A phone's SIM tray is a 1-slot ox
----stash whose id lives in the phone item's own metadata, so the tray follows the ITEM through
----trades, drops and stashes.
+---@type table Tray module; the table returned at end of file. A phone's SIM tray is a 1-slot
+---stash (ox_inventory or one_inventory) whose id lives in the phone item's own metadata, so the
+---tray follows the ITEM through trades, drops and stashes.
 local tray = {}
 
----@type string ox_inventory resource name (trays are ox-only).
+---@type string ox_inventory resource name.
 local OX = 'ox_inventory'
+
+---@type string one_inventory resource name.
+local ONE = 'one_inventory'
 
 ---@type string Prefix on every tray id; the ox hook filters match against it.
 local PREFIX = 'simtray:'
 
+---@type string Prefix on a tray's one_inventory stash name. one_inventory reads a second colon in
+---a `stash:<name>` reference as an owner, so the id's colon becomes an underscore there.
+local ONE_PREFIX = 'simtray_'
+
 ---@type integer Characters of randomness after the prefix.
 local ID_LEN = 16
+
+---@type string Label on the tray's inventory panel.
+local LABEL = 'SIM Tray'
+
+---@type integer Tray capacity in grams.
+local MAX_WEIGHT = 1000
 
 ---@type table<string, true> Tray ids already registered with ox this session.
 local registered = {}
@@ -27,12 +40,79 @@ local phoneItems = {}
 for _, entry in ipairs(config.Phone.Items or {}) do phoneItems[entry.item] = true end
 
 -- Tray mode as CONFIGURED, reading the pre-rename `UseContainers` key when `SimTray` is absent.
--- The LIVE mode additionally needs an ox backend; server/sim/init.lua folds that in as state.mode.
+-- The LIVE mode additionally needs a tray backend (tray.supported); server/sim/init.lua folds
+-- that in as state.mode.
 local configured = config.Sim.SimTray
 if configured == nil then configured = config.Sim.UseContainers end
 
 ---@type boolean True when the config asks for physical SIM trays.
 tray.configured = configured == true
+
+---The one_inventory stash name for a tray id.
+---@param id string tray id
+---@return string
+local function oneName(id)
+    return ONE_PREFIX .. id:sub(#PREFIX + 1)
+end
+
+---The one_inventory stash reference for a tray id.
+---@param id string tray id
+---@return string
+local function oneRef(id)
+    return 'stash:' .. oneName(id)
+end
+
+---@type table<string, table> Stash operations behind a tray, keyed by inventory resource. Each entry
+---provides items(id), setMetadata(id, slot, metadata) -> ok and open(source, id) -> ok; ox also
+---needs ensure(id), since one_inventory creates a stash the first time it is opened.
+local BACKENDS = {
+    [OX] = {
+        ensure = function(id)
+            if registered[id] then return end
+            registered[id] = true
+            exports[OX]:RegisterStash(id, LABEL, 1, MAX_WEIGHT, false)
+        end,
+        items = function(id)
+            return exports[OX]:GetInventoryItems(id)
+        end,
+        setMetadata = function(id, slot, metadata)
+            exports[OX]:SetMetadata(id, slot, metadata)
+            return true
+        end,
+        open = function(source, id)
+            exports[OX]:forceOpenInventory(source, 'stash', id)
+            return true
+        end,
+    },
+    [ONE] = {
+        items = function(id)
+            return exports[ONE]:GetInventoryItems(oneRef(id))
+        end,
+        setMetadata = function(id, slot, metadata)
+            return exports[ONE]:SetItemMetadata(oneRef(id), slot, metadata) ~= false
+        end,
+        open = function(source, id)
+            return exports[ONE]:OpenInventory(source, 'stash', {
+                id        = oneName(id),
+                label     = LABEL,
+                slots     = 1,
+                maxWeight = MAX_WEIGHT,
+            }) ~= false
+        end,
+    },
+}
+
+---The stash backend for the running inventory, nil when it cannot host trays.
+---@return table|nil
+local function backend()
+    return BACKENDS[bridge.slotBackendName() or '']
+end
+
+---True when the running inventory can host SIM trays (ox_inventory or one_inventory).
+---@return boolean
+function tray.supported()
+    return backend() ~= nil
+end
 
 ---True when `id` has the shape of one of our tray ids.
 ---@param id any
@@ -41,13 +121,23 @@ function tray.isTrayId(id)
     return type(id) == 'string' and id:sub(1, #PREFIX) == PREFIX
 end
 
----Registers a tray with ox, once per id per session. Registered UNOWNED so it travels with the
----item rather than a character; holding the phone is what authorises access (see holderSlot).
+---The tray id behind a one_inventory stash reference or bare stash name, nil for anything else.
+---@param ref any inventory reference from a one_inventory hook payload
+---@return string|nil id
+function tray.fromOneRef(ref)
+    if type(ref) ~= 'string' then return nil end
+    local key = ref:match('^stash:' .. ONE_PREFIX .. '(%w+)$') or ref:match('^' .. ONE_PREFIX .. '(%w+)$')
+    return key and (PREFIX .. key) or nil
+end
+
+---Registers a tray with the inventory where it needs one (ox), once per id per session. Registered
+---UNOWNED so it travels with the item rather than a character; holding the phone is what authorises
+---access (see holderSlot).
 ---@param id string tray id
 function tray.ensure(id)
-    if registered[id] then return end
-    registered[id] = true
-    pcall(function() exports[OX]:RegisterStash(id, 'SIM Tray', 1, 1000, false) end)
+    local b = backend()
+    if not b or not b.ensure then return end
+    pcall(b.ensure, id)
 end
 
 ---The phone item row at `slot`, or nil when that slot holds anything else.
@@ -79,14 +169,29 @@ function tray.idFor(source, slot)
     return id
 end
 
----Items inside a tray, keyed by slot. Nil when the id is not a tray or ox refuses the read.
+---Items inside a tray. Nil when the id is not a tray, the inventory cannot host trays, or it
+---refuses the read.
 ---@param id string tray id
 ---@return table|nil items
 function tray.items(id)
     if not tray.isTrayId(id) then return nil end
+    local b = backend()
+    if not b then return nil end
     tray.ensure(id)
-    local ok, items = pcall(function() return exports[OX]:GetInventoryItems(id) end)
+    local ok, items = pcall(b.items, id)
     return (ok and type(items) == 'table') and items or nil
+end
+
+---Overwrites the metadata of one slot inside a tray. False when the inventory refuses the write.
+---@param id string tray id
+---@param slot number slot inside the tray
+---@param metadata table full metadata table to store
+---@return boolean ok
+function tray.setMetadata(id, slot, metadata)
+    local b = backend()
+    if not b or not tray.isTrayId(id) then return false end
+    local ok, res = pcall(b.setMetadata, id, slot, metadata)
+    return ok and res == true
 end
 
 ---The slot of the phone this player carries whose tray is `id`, or nil when they carry no such
@@ -111,10 +216,13 @@ end
 ---@param slot number|string|nil inventory slot holding a phone
 ---@return boolean ok
 function tray.open(source, slot)
+    local b = backend()
+    if not b then return false end
     local id = tray.idFor(source, slot)
     if not id then return false end
     tray.ensure(id)
-    return (pcall(function() exports[OX]:forceOpenInventory(source, 'stash', id) end))
+    local ok, res = pcall(b.open, source, id)
+    return ok and res == true
 end
 
 ---Moves a phone off the legacy ox item-container tray onto its stash tray: any SIM inside the

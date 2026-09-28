@@ -73,7 +73,7 @@ local function blocker()
     if config.Sim.Enabled ~= true then return 'simoff' end
     if not siminv.supported() then return 'backend' end
     if configuredOwner() == 'character' then return 'character' end
-    if config.Sim.BuiltInNumbers ~= true and tray.configured and siminv.isOx() then return 'tray' end
+    if config.Sim.BuiltInNumbers ~= true and tray.configured and tray.supported() then return 'tray' end
     return nil
 end
 

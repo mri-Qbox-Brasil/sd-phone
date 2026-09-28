@@ -10,11 +10,11 @@ local simStore = require 'server.sim.store'
 local tray     = require 'server.sim.tray'
 
 ---@type table Inv module; the table returned at end of file. SIM-feature glue over the bridge's
----slot-level API: find phone items, read/write the SIM number on them, and (container mode)
----read the SIM out of a phone's SIM-tray container.
+---slot-level API: find phone items, read/write the SIM number on them, and (tray mode) read the
+---SIM out of a phone's SIM tray.
 local inv = {}
 
----@type string ox_inventory resource name (container mode is ox-only).
+---@type string ox_inventory resource name (the legacy container sweep is ox-only).
 local OX = 'ox_inventory'
 
 ---@type string[] Display-only keys another phone resource writes ALONGSIDE its number key.
@@ -53,7 +53,7 @@ function inv.backendName()
     return bridge.slotBackendName()
 end
 
----True while ox_inventory is the live slot backend (container mode + hooks requirement).
+---True while ox_inventory is the live slot backend (legacy container sweep + ox hooks).
 ---@return boolean
 function inv.isOx()
     return bridge.slotBackendName() == OX
@@ -91,7 +91,7 @@ end
 ---@param phone { slot: number, metadata: table }
 ---@return string|nil number bare-digit SIM number, nil when no SIM is installed
 function inv.getSimNumber(source, phone)
-    if tray.configured and inv.isOx() then
+    if tray.configured and tray.supported() then
         -- No tray id means this phone's tray has never been opened, so it holds no SIM. Minting
         -- one here would write metadata on every read for no gain.
         local trayId = phone.metadata and phone.metadata.simTray
@@ -114,8 +114,7 @@ function inv.getSimNumber(source, phone)
         local metadata = type(blank.metadata) == 'table' and blank.metadata or {}
         metadata.number      = number
         metadata.description = ('SIM: %s'):format(util.formatNumber(number))
-        local ok = pcall(function() exports[OX]:SetMetadata(trayId, blank.slot, metadata) end)
-        return ok and number or nil
+        return tray.setMetadata(trayId, blank.slot, metadata) and number or nil
     end
 
     local md = phone.metadata
@@ -138,7 +137,7 @@ end
 ---@param phone { metadata: table }
 ---@return boolean
 function inv.hasLegacyNumber(phone)
-    if tray.configured and inv.isOx() then return false end
+    if tray.configured and tray.supported() then return false end
     local md = phone.metadata
     if type(md) ~= 'table' then return false end
     if util.digits(md.simNumber) ~= '' then return false end
@@ -225,14 +224,13 @@ function inv.giveSimItem(source, number)
 end
 
 ---Rewrites the number on the SIM inside a phone: metadata mode updates the phone item itself,
----tray mode updates the sim_card item inside the phone's tray (ox SetMetadata on the tray
----inventory). Used by the setSimNumber export.
+---tray mode updates the sim_card item inside the phone's tray. Used by the setSimNumber export.
 ---@param source number player server id
 ---@param phone { slot: number, metadata: table }
 ---@param number string new bare-digit number
 ---@return boolean ok
 function inv.rewriteSimNumber(source, phone, number)
-    if tray.configured and inv.isOx() then
+    if tray.configured and tray.supported() then
         local trayId = phone.metadata and phone.metadata.simTray
         local items = tray.isTrayId(trayId) and tray.items(trayId)
         if type(items) ~= 'table' then return false end
@@ -241,8 +239,7 @@ function inv.rewriteSimNumber(source, phone, number)
                 local metadata = type(item.metadata) == 'table' and item.metadata or {}
                 metadata.number      = number
                 metadata.description = ('SIM: %s'):format(util.formatNumber(number))
-                local ok = pcall(function() exports[OX]:SetMetadata(trayId, item.slot, metadata) end)
-                return ok
+                return tray.setMetadata(trayId, item.slot, metadata)
             end
         end
         return false

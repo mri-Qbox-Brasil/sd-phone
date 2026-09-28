@@ -359,10 +359,10 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Slot-level API (per-slot metadata). Unlike the aggregate operations above,
--- these are resolved at CALL time: ox_inventory latches on as soon as it is
--- running (load order can hide it from the boot-time detection, and on QBox
--- the PlayerData.items table is only a stale mirror of ox), and the QBCore
--- items-table path is the fallback for qb-family inventories without ox.
+-- these are resolved at CALL time: one_inventory or ox_inventory latches on as
+-- soon as it is running (load order can hide it from the boot-time detection,
+-- and on QBox the PlayerData.items table is only a stale mirror of ox), and the
+-- QBCore items-table path is the fallback for qb-family inventories without ox.
 -- Backends are added in SLOT_BACKENDS; a backend absent there simply reports
 -- slot metadata as unsupported.
 -- ---------------------------------------------------------------------------
@@ -373,8 +373,12 @@ end
 ---@field count number stack count
 ---@field metadata table per-slot metadata (never nil)
 
----@type boolean Latched true the first time ox_inventory is seen running.
-local slotOx = active == OX
+---@type string[] Slot backends latched at call time once seen running, in priority order.
+---one_inventory comes first because it provides the ox_inventory name, which then reads as started.
+local LATCHING = { ONE, OX }
+
+---@type string|nil The latched backend, set the first time one of LATCHING is seen running.
+local slotLatched = (active == ONE or active == OX) and active or nil
 
 ---@type string Sentinel backend: no inventory resource, framework-native QBCore items table.
 local QBCORE = 'qb-core'
@@ -383,10 +387,12 @@ local QBCORE = 'qb-core'
 ---slot-metadata path exists (plain ESX inventory).
 ---@return string|nil
 local function slotBackend()
-    if slotOx then return OX end
-    if GetResourceState(OX) == 'started' then
-        slotOx = true
-        return OX
+    if slotLatched then return slotLatched end
+    for _, name in ipairs(LATCHING) do
+        if GetResourceState(name) == 'started' then
+            slotLatched = name
+            return name
+        end
     end
     if active then return active end
     if framework.qb then return QBCORE end

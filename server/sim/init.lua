@@ -95,21 +95,42 @@ function player.onlineCidMap()
     return out
 end
 
----ox_inventory only: watch SIM/phone item moves so a pulled SIM cuts service within a swap, not
----a cache TTL. Any matching move flushes the whole session cache (rare event, cheap rescan) and
----pushes fresh state to the player who moved it. Tray mode adds two guards ox gave containers for
----free: only the phone's holder may open its tray, and only a SIM may go in it.
-local function registerHooks()
+---Sends a simple ox_lib toast to a player.
+---@param source number player server id
+---@param description string toast text
+---@param kind string 'success' | 'error' | 'inform'
+local function toast(source, description, kind)
+    TriggerClientEvent('ox_lib:notify', source, { title = 'Phone', description = description, type = kind })
+end
+
+---Item names whose moves change a player's SIM state: the SIM item and every phone item.
+---@return table<string, true>
+local function watchedItems()
     local watched = { [config.Sim.SimItem] = true }
     for item in pairs(siminv.phoneColors) do watched[item] = true end
+    return watched
+end
+
+---Flushes the whole session cache and pushes fresh SIM state to `source` on the next tick, after
+---the inventory has finished the move that triggered it.
+---@param source any player server id from a hook payload
+local function refreshAfterMove(source)
+    SetTimeout(0, function()
+        session.invalidate(nil)
+        local src = tonumber(source)
+        if src then session.push(src) end
+    end)
+end
+
+---ox_inventory: watch SIM/phone item moves so a pulled SIM cuts service within a swap, not a
+---cache TTL. Tray mode adds two guards: only the phone's holder may open its tray, and only a SIM
+---may go in it.
+local function registerOxHooks()
+    local watched = watchedItems()
     pcall(function()
         exports.ox_inventory:registerHook('swapItems', function(payload)
             if not watched[payload.fromSlot and payload.fromSlot.name or ''] then return end
-            SetTimeout(0, function()
-                session.invalidate(nil)
-                local src = tonumber(payload.source)
-                if src then session.push(src) end
-            end)
+            refreshAfterMove(payload.source)
         end, {})
     end)
 
@@ -134,11 +155,57 @@ local function registerHooks()
     end)
 end
 
--- Boot: wait for the backend (ox may start after sd-phone - prefer it for up to 10s before
--- settling on a fallback), then create the schema and activate.
+---one_inventory: the same move watch and tray guards as registerOxHooks, with drops and gives
+---watched alongside swaps. The tray guards run unfiltered and match the tray reference themselves.
+---Tray mode also adds a SIM Tray entry to each phone item's right-click menu.
+local function registerOneHooks()
+    local watched = watchedItems()
+    local function onMove(payload) refreshAfterMove(payload.source) end
+    for _, hook in ipairs({ 'beforeItemSwap', 'beforeItemDrop', 'beforeItemGive' }) do
+        pcall(function() exports.one_inventory:RegisterHook(hook, onMove, { itemFilter = watched }) end)
+    end
+
+    if state.mode ~= 'tray' then return end
+
+    pcall(function()
+        exports.one_inventory:RegisterHook('beforeInventoryOpen', function(payload)
+            local data = type(payload.data) == 'table' and payload.data or {}
+            local id = tray.fromOneRef(payload.inventoryId) or tray.fromOneRef(data.id)
+            if not id then return end
+            local src = tonumber(payload.source)
+            if not src or not tray.holderSlot(src, id) then return false end
+        end, {})
+    end)
+
+    pcall(function()
+        exports.one_inventory:RegisterHook('beforeItemSwap', function(payload)
+            local sim = config.Sim.SimItem
+            if tray.fromOneRef(payload.toInventory) and payload.item ~= sim then return false end
+            local displaced = type(payload.toItem) == 'table' and payload.toItem.name
+            if tray.fromOneRef(payload.fromInventory) and displaced and displaced ~= sim then return false end
+        end, {})
+    end)
+
+    for item in pairs(siminv.phoneColors) do
+        pcall(function()
+            exports.one_inventory:RegisterItemButton(item, 'SIM Tray', function(payload)
+                local src = tonumber(payload and payload.source)
+                if src and not tray.open(src, payload.slot) then
+                    toast(src, 'That phone has no SIM tray.', 'error')
+                end
+            end)
+        end)
+    end
+end
+
+---@type table<string, fun()> Hook registration per slot backend; other inventories get none.
+local HOOKS = { ox_inventory = registerOxHooks, one_inventory = registerOneHooks }
+
+-- Boot: wait for the backend (ox_inventory or one_inventory may start after sd-phone - prefer
+-- them for up to 10s before settling on a fallback), then create the schema and activate.
 CreateThread(function()
     for _ = 1, 100 do
-        if siminv.isOx() then break end
+        if tray.supported() then break end
         Wait(100)
     end
     if not siminv.supported() then
@@ -166,24 +233,29 @@ CreateThread(function()
     state.device    = owner == 'device'
     state.character = owner == 'character'
     -- Attach mode is always metadata without SIM items (nothing to drag into a tray).
-    state.mode   = (not state.builtin and tray.configured and siminv.isOx()) and 'tray' or 'metadata'
+    state.mode   = (not state.builtin and tray.configured and tray.supported()) and 'tray' or 'metadata'
     state.active = true
-    if siminv.isOx() then registerHooks() end
+    local registerHooks = HOOKS[siminv.backendName() or '']
+    if registerHooks then registerHooks() end
     print(('^2[sd-phone:sim]^0 unique phones active (%s mode, %s identity%s, %s backend)')
         :format(state.mode, owner, state.builtin and ', built-in numbers' or '', siminv.backendName()))
 end)
 
----Extracts the used item's slot + SIM number for both usable-item callback shapes (ox passes a
----slot argument and metadata lives on the slot; qb passes an item table with .slot/.info).
+---Extracts the used item's slot + SIM number for every usable-item callback shape: ox passes a
+---slot argument, qb passes the item table second, and ESX with one_inventory passes it third.
 ---@param source number player server id
 ---@param itemArg any second usable-callback argument
+---@param invArg any third usable-callback argument
 ---@param slotArg any fourth usable-callback argument
 ---@return number|nil slot, string|nil number
-local function usedSim(source, itemArg, slotArg)
+local function usedSim(source, itemArg, invArg, slotArg)
+    local used = type(itemArg) == 'table' and itemArg
+        or (type(invArg) == 'table' and tonumber(invArg.slot) and invArg)
+        or nil
     local slot, number
-    if type(itemArg) == 'table' then
-        slot = tonumber(itemArg.slot)
-        local md = itemArg.metadata or itemArg.info
+    if used then
+        slot = tonumber(used.slot)
+        local md = used.metadata or used.info
         if type(md) == 'table' then number = md.number end
     end
     slot = slot or tonumber(slotArg)
@@ -195,22 +267,14 @@ local function usedSim(source, itemArg, slotArg)
     return slot, digits ~= '' and digits or nil
 end
 
----Sends a simple ox_lib toast to a player.
----@param source number player server id
----@param description string toast text
----@param kind string 'success' | 'error' | 'inform'
-local function toast(source, description, kind)
-    TriggerClientEvent('ox_lib:notify', source, { title = 'Phone', description = description, type = kind })
-end
-
 -- Using a sim_card: metadata mode installs it into the first phone without service (consuming
 -- the item); container mode reads the number back (installation is dragging it into the tray).
 -- A blank card (spawned raw by any shop or script) self-activates with a fresh minted number.
 -- Built-in-numbers mode has no SIM items at all, so the usable item never registers (config
 -- gate, not state: registration happens at load, before the boot thread flips the flags).
 if config.Sim.BuiltInNumbers ~= true then
-inv.registerUsable(config.Sim.SimItem, function(source, itemArg, _invArg, slotArg)
-    local slot, number = usedSim(source, itemArg, slotArg)
+inv.registerUsable(config.Sim.SimItem, function(source, itemArg, invArg, slotArg)
+    local slot, number = usedSim(source, itemArg, invArg, slotArg)
     local blank = number == nil
     if blank and (config.Sim.ActivateBlankSims == false or not slot) then
         toast(source, 'This SIM card is blank.', 'error')

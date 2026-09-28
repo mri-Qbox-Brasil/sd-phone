@@ -137,10 +137,11 @@ local simState = require 'server.sim.state'
 ---phones acts (and calls) as whichever phone they actually opened.
 local function RegisterPhoneItems()
     for _, entry in ipairs(config.Phone.Items or {}) do
-        inv.registerUsable(entry.item, function(source, itemArg, _invArg, slotArg)
+        inv.registerUsable(entry.item, function(source, itemArg, invArg, slotArg)
             local deviceHint
             if simState.active then
                 local usedSlot = (type(itemArg) == 'table' and tonumber(itemArg.slot)) or tonumber(slotArg)
+                    or (type(invArg) == 'table' and tonumber(invArg.slot)) or nil
                 require('server.sim.session').setActive(source, { slot = usedSlot, color = entry.color })
                 -- Synchronous metadata peek (no DB): hands the client this phone's device
                 -- identity with the open, so switching phones tears the old profile down AT the

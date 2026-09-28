@@ -124,11 +124,15 @@ function money.get(source, moneyType)
     return 0
 end
 
----Pick the "read black-money balance" implementation once at module load: ox counts black_money,
----qb-inventory sums markedbills `info.worth`, ESX reads the account. 0 with no supported path.
+---@type table<string, true> Inventories that hold black money as a black_money item.
+local BLACK_MONEY_ITEM = { ['ox_inventory'] = true, ['one_inventory'] = true }
+
+---Pick the "read black-money balance" implementation once at module load: ox and one_inventory
+---count black_money, qb-inventory sums markedbills `info.worth`, ESX reads the account. 0 with no
+---supported path.
 ---@return fun(source: number): number
 local function chooseGetBlack()
-    if inventoryId.name == 'ox_inventory' then
+    if BLACK_MONEY_ITEM[inventoryId.name or ''] then
         local invMod = require 'bridge.server.inventory'
         return function(src) return invMod.count(src, 'black_money') end
     end
@@ -163,11 +167,12 @@ local getBlack = chooseGetBlack()
 ---@return number
 function money.getBlack(source) return getBlack(source) end
 
----Pick the "credit black money" implementation once at module load: ox adds black_money, qb mints
----one markedbills with the amount in `info.worth`, ESX credits the account. False with no path.
+---Pick the "credit black money" implementation once at module load: ox and one_inventory add
+---black_money, qb mints one markedbills with the amount in `info.worth`, ESX credits the account.
+---False with no path.
 ---@return fun(source: number, amount: number): boolean
 local function chooseAddBlack()
-    if inventoryId.name == 'ox_inventory' then
+    if BLACK_MONEY_ITEM[inventoryId.name or ''] then
         local invMod = require 'bridge.server.inventory'
         return function(src, amount) return invMod.add(src, 'black_money', amount) end
     end
@@ -200,7 +205,7 @@ function money.addBlack(source, amount) return addBlack(source, amount) end
 ---left the player. The qb path removes bills by slot, re-adding a reduced bill on a partial consume.
 ---@return fun(source: number, amount: number): boolean
 local function chooseRemoveBlack()
-    if inventoryId.name == 'ox_inventory' then
+    if BLACK_MONEY_ITEM[inventoryId.name or ''] then
         local invMod = require 'bridge.server.inventory'
         return function(src, amount) return invMod.remove(src, 'black_money', amount) end
     end
