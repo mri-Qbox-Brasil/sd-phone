@@ -208,7 +208,7 @@ require 'client.callring'
 local phoneState = {
     open       = false,  -- true while the NUI is focused on the phone
     locked     = true,   -- true while the lockscreen is shown
-    battery    = config.StatusBar.BatteryStart, -- cosmetic, ticks down while open
+    battery    = config.StatusBar.BatteryStart, -- cosmetic, drains while open only when StatusBar.BatteryDrain is on
 }
 
 ---@type boolean True while another resource has disabled the phone.
@@ -967,18 +967,23 @@ end)
 
 gameclock.start(phoneState.isOpen)
 
--- Cosmetic battery drain: one percent every 30s while the phone is open, pushed to the React app.
-CreateThread(function()
-    while true do
-        Wait(30000)
-        if phoneState.open and phoneState.battery > 0 then
-            phoneState.battery = phoneState.battery - 1
-            SendNUIMessage({ action = 'sd-phone:battery', data = phoneState.battery })
-            ---First-party client event: the cosmetic battery percentage moved.
-            TriggerEvent('sd-phone:client:battery', phoneState.battery)
+---@type integer Milliseconds between one-percent battery drops (StatusBar.BatteryDrainSeconds, floored at 1s).
+local BATTERY_DRAIN_MS = math.floor(math.max(1, tonumber(config.StatusBar.BatteryDrainSeconds) or 30) * 1000)
+
+if config.StatusBar.BatteryDrain then
+    -- Cosmetic battery drain: one percent per BATTERY_DRAIN_MS while the phone is open, pushed to the React app.
+    CreateThread(function()
+        while true do
+            Wait(BATTERY_DRAIN_MS)
+            if phoneState.open and phoneState.battery > 0 then
+                phoneState.battery = phoneState.battery - 1
+                SendNUIMessage({ action = 'sd-phone:battery', data = phoneState.battery })
+                ---First-party client event: the cosmetic battery percentage moved.
+                TriggerEvent('sd-phone:client:battery', phoneState.battery)
+            end
         end
-    end
-end)
+    end)
+end
 
 -- Cuffs go on and players go down mid-session, so gating the open is not enough on its own: an
 -- already-open phone is taken away here. Without it the block is sidestepped by opening the phone
