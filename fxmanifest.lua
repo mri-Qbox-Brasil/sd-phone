@@ -15,6 +15,7 @@ shared_scripts {
 client_scripts {
     'bridge/client/init.lua',
     'mri/client/keybind.lua',
+    'mri/client/weather.lua',
     'client/main.lua',
 }
 

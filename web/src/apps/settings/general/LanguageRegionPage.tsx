@@ -5,6 +5,7 @@ import { t } from '@/i18n';
 import { formatMediumDate } from '@/lib/time';
 import { useIosPush } from '@/hooks/useIosPush';
 import { SUPPORTED_LOCALES, useLocaleStore } from '@/stores/localeStore';
+import { useWidgetData } from '@/stores/widgetDataStore';
 import { ListGroup, ListRow } from '@/ui/ListGroup';
 import { SubPage } from '../SettingsSubPage';
 import { NavBar } from '@/ui/NavBar';
@@ -13,6 +14,7 @@ export function LanguageRegionPage({ onBack }: { onBack: () => void }) {
     const locale = useLocaleStore(s => s.locale);
     const setLocale = useLocaleStore(s => s.setLocale);
     const [picking, setPicking] = useState(false);
+    const tempUnit = useWidgetData(s => s.weather?.temperature?.unit);
 
     const current = SUPPORTED_LOCALES.find(o => o.code === locale)?.name ?? 'English';
 
@@ -33,7 +35,11 @@ export function LanguageRegionPage({ onBack }: { onBack: () => void }) {
 
             <ListGroup header={t('settings.regionFormats', 'Region formats')}>
                 <ListRow label={t('settings.calendar', 'Calendar')}    value={t('settings.calendarGregorian', 'Gregorian')} divider />
-                <ListRow label={t('settings.temperature', 'Temperature')} value={t('settings.temperatureFahrenheit', '°F')} divider />
+                <ListRow
+                    label={t('settings.temperature', 'Temperature')}
+                    value={tempUnit === 'C' ? '°C' : t('settings.temperatureFahrenheit', '°F')}
+                    divider
+                />
                 <ListRow label={t('settings.measurement', 'Measurement')} value={t('settings.measurementImperial', 'Imperial')} />
             </ListGroup>
 

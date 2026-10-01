@@ -175,6 +175,12 @@ export interface WeatherPayload {
     current: string;
     next:    string;
     time?:   { hour: number; minute: number };
+    temperature?: LiveTemperature;
+}
+
+export interface LiveTemperature {
+    value: number;
+    unit:  'C' | 'F';
 }
 
 interface SessionPayload {

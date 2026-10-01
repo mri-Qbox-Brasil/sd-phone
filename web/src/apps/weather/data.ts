@@ -1,5 +1,6 @@
 
 import { t } from '@/i18n';
+import type { LiveTemperature } from '@/core/types';
 import { seededRandom } from '@/lib/random';
 import { format12h } from '@/lib/time';
 
@@ -13,7 +14,7 @@ export type WeatherCode =
 interface WeatherSlice {
     offset: number;
     code:   WeatherCode;
-    tempF:  number;
+    temp:   number;
 }
 
 export interface DayForecast {
@@ -30,8 +31,9 @@ export interface CityForecast {
     isLive:      boolean;
     nowTimeGame?: { hour: number; minute: number };
     nowCode:     WeatherCode;
-    nowTempF:    number;
-    feelsLikeF:  number;
+    unit:        LiveTemperature['unit'];
+    nowTemp:     number;
+    feelsLike:   number;
     humidity:    number;
     windMph:     number;
     uvIndex:     number;
@@ -169,7 +171,12 @@ function tempForCode(code: WeatherCode, base: number, variance: number, rnd: () 
 
 export function buildForecast(
     profile: ClimateProfile,
-    live?: { current: WeatherCode; next: WeatherCode; time?: { hour: number; minute: number } },
+    live?: {
+        current:      WeatherCode;
+        next:         WeatherCode;
+        time?:        { hour: number; minute: number };
+        temperature?: LiveTemperature;
+    },
 ): CityForecast {
     const rnd = seededRandom(seedFor(profile.id));
     const baseHour = live?.time?.hour ?? new Date().getHours();
@@ -186,12 +193,17 @@ export function buildForecast(
         const tempBase = tempForCode(code, profile.baseTempF, profile.variance, rnd);
         const hourOfDay = (baseHour + i) % 24;
         const diurnal   = Math.sin(((hourOfDay - 6) / 24) * Math.PI * 2) * 6;
-        hourly.push({ offset: i * 60, code, tempF: Math.round(tempBase + diurnal) });
+        hourly.push({ offset: i * 60, code, temp: Math.round(tempBase + diurnal) });
     }
 
-    const todayTemps = hourly.slice(0, 24).map(h => h.tempF);
+    const todayTemps = hourly.slice(0, 24).map(h => h.temp);
     const todayHigh  = Math.max(...todayTemps);
     const todayLow   = Math.min(...todayTemps);
+
+    const unit   = live?.temperature?.unit ?? 'F';
+    const toUnit = (f: number) => (unit === 'C' ? (f - 32) * 5 / 9 : f);
+    const shift  = live?.temperature ? live.temperature.value - toUnit(nowTempF) : 0;
+    const conv   = (f: number) => Math.round(toUnit(f) + shift);
 
     const dayLabels = [
         t('weather.daySun', 'Sun'), t('weather.dayMon', 'Mon'), t('weather.dayTue', 'Tue'),
@@ -201,12 +213,12 @@ export function buildForecast(
     const today = new Date().getDay();
 
     const daily: DayForecast[] = [];
-    daily.push({ label: t('weather.today', 'Today'), code: nowCode, high: todayHigh, low: todayLow });
+    daily.push({ label: t('weather.today', 'Today'), code: nowCode, high: conv(todayHigh), low: conv(todayLow) });
     for (let d = 1; d < 7; d++) {
         const code = profile.pool[Math.floor(rnd() * profile.pool.length)];
         const high = tempForCode(code, profile.baseTempF, profile.variance, rnd);
         const low  = high - 8 - Math.floor(rnd() * 8);
-        daily.push({ label: dayLabels[(today + d) % 7], code, high, low });
+        daily.push({ label: dayLabels[(today + d) % 7], code, high: conv(high), low: conv(low) });
     }
 
     return {
@@ -216,14 +228,15 @@ export function buildForecast(
         isLive:      profile.id === 'los_santos' && !!live,
         nowTimeGame: live?.time,
         nowCode,
-        nowTempF,
-        feelsLikeF:  Math.round(nowTempF + (rnd() - 0.5) * 6),
+        unit,
+        nowTemp:     conv(nowTempF),
+        feelsLike:   conv(nowTempF + (rnd() - 0.5) * 6),
         humidity:    Math.round(40 + rnd() * 50),
         windMph:     Math.round(2 + rnd() * 12),
         uvIndex:     Math.max(0, Math.round(10 - (24 - hourly.length) - rnd() * 4)),
         sunriseMin:  profile.sunrise,
         sunsetMin:   profile.sunset,
-        hourly,
+        hourly:      hourly.map(h => ({ ...h, temp: conv(h.temp) })),
         daily,
     };
 }

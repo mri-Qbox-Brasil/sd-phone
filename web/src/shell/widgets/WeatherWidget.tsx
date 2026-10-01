@@ -38,7 +38,9 @@ export function WeatherWidget({ size, width, height, align = 'left' }: {
 
     const city = useMemo(() => {
         const cur = asCode(payload?.current);
-        const live = cur ? { current: cur, next: asCode(payload?.next) ?? cur, time: payload?.time } : undefined;
+        const live = cur
+            ? { current: cur, next: asCode(payload?.next) ?? cur, time: payload?.time, temperature: payload?.temperature }
+            : undefined;
         return buildForecast(PROFILES.find(p => p.id === 'los_santos')!, live);
     }, [payload]);
 
@@ -69,7 +71,7 @@ export function WeatherWidget({ size, width, height, align = 'left' }: {
                 <div key={i} className="flex flex-1 flex-col items-center gap-1">
                     <span className="text-[10px] tabular-nums opacity-75">{formatHour(h.offset, city.nowTimeGame?.hour)}</span>
                     <WeatherIcon code={h.code} className="opacity-95" style={{ width: px, height: px }} />
-                    <span className="text-[12px] font-semibold tabular-nums">{h.tempF}&deg;</span>
+                    <span className="text-[12px] font-semibold tabular-nums">{h.temp}&deg;</span>
                 </div>
             ))}
         </div>
@@ -84,7 +86,7 @@ export function WeatherWidget({ size, width, height, align = 'left' }: {
                             {t('weather.losSantos', 'Los Santos')}
                         </div>
                         <div className="mt-0.5 text-[34px] font-light leading-none tabular-nums tracking-tight">
-                            {city.nowTempF}&deg;
+                            {city.nowTemp}&deg;
                         </div>
                     </div>
                     <WeatherIcon code={city.nowCode} className="h-[34px] w-[34px] shrink-0 opacity-95" />
@@ -106,7 +108,7 @@ export function WeatherWidget({ size, width, height, align = 'left' }: {
                         {t('weather.losSantos', 'Los Santos')}
                     </div>
                     <div className="mt-0.5 font-light leading-none tabular-nums tracking-tight" style={{ fontSize: big ? 56 : 42 }}>
-                        {city.nowTempF}&deg;
+                        {city.nowTemp}&deg;
                     </div>
                     <div className="mt-1 truncate font-medium leading-tight opacity-90" style={{ fontSize: big ? 15 : 13 }}>
                         {label}

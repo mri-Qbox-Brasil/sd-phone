@@ -19,6 +19,7 @@ interface LiveWeather {
     current: WeatherCode;
     next:    WeatherCode;
     time?:   { hour: number; minute: number };
+    temperature?: WeatherPayload['temperature'];
 }
 
 const KNOWN_CODES = new Set<WeatherCode>([
@@ -37,7 +38,7 @@ export function Weather({ onClose }: { onClose: () => void }) {
     const applyWeather = useCallback((data?: WeatherPayload) => {
         const cur = asCode(data?.current);
         if (!cur) return;
-        setLive({ current: cur, next: asCode(data!.next) ?? cur, time: data!.time });
+        setLive({ current: cur, next: asCode(data!.next) ?? cur, time: data!.time, temperature: data!.temperature });
     }, []);
     useNuiEvent('sd-phone:weather', applyWeather);
     useEffect(() => { void fetchNui<WeatherPayload>('sd-phone:weather:get').then(applyWeather); }, [applyWeather]);
@@ -81,7 +82,7 @@ export function Weather({ onClose }: { onClose: () => void }) {
                     )}
                     <div className="mt-1 flex items-start justify-center">
                         <span className="text-[88px] font-thin leading-none tabular-nums">
-                            {city.nowTempF}
+                            {city.nowTemp}
                         </span>
                         <span className="mt-3 text-[28px] font-thin">°</span>
                     </div>
@@ -100,14 +101,14 @@ export function Weather({ onClose }: { onClose: () => void }) {
                             <div key={h.offset} className="flex w-[50px] shrink-0 flex-col items-center gap-1.5">
                                 <span className="text-[13px] text-white/80">{formatHour(h.offset, city.nowTimeGame?.hour)}</span>
                                 <WeatherIcon code={h.code} className="h-[30px] w-[30px]" strokeWidth={1.8} />
-                                <span className="text-[18px] font-medium tabular-nums">{h.tempF}°</span>
+                                <span className="text-[18px] font-medium tabular-nums">{h.temp}°</span>
                             </div>
                         ))}
                     </div>
                 </Card>
 
                 <div className="grid grid-cols-2 gap-2 px-3 pb-6 pt-2">
-                    <Tile label={t('weather.feelsLike', 'Feels Like')} value={`${city.feelsLikeF}°`} />
+                    <Tile label={t('weather.feelsLike', 'Feels Like')} value={`${city.feelsLike}°`} />
                     <Tile label={t('weather.humidity', 'Humidity')}   value={`${city.humidity}%`} />
                     <Tile label={t('weather.wind', 'Wind')}       value={t('weather.windMph', '{speed} mph', { speed: city.windMph })} />
                     <Tile label={t('weather.uvIndex', 'UV Index')}   value={`${city.uvIndex}`} />
