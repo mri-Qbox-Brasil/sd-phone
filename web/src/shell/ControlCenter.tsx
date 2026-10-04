@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-    Camera, Contrast, Flashlight, Moon, Music, Pause, Plane, Play,
+    Bluetooth, Camera, Contrast, Flashlight, Moon, Music, Pause, Plane, Play,
     SkipBack, SkipForward, Smartphone, Sun, Video, Volume2, VolumeX,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { fetchNui, isFiveM } from '@/core/nui';
 import { setLaunchIntent } from '@/shell/launchIntent';
+import { requestOpenAt } from '@/shell/deeplink';
+import { useBluetoothStore } from '@/stores/bluetoothStore';
 import { trackFraction } from '@/lib/zoom';
 import { useTheme } from '@/stores/themeStore';
 import { useMusic, useMusicProgress } from '@/apps/music/MusicContext';
@@ -21,6 +23,8 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
 }) {
     const { theme, setTheme, brightness, setBrightness, ringtoneVol, setRingtoneVol, airplaneMode, setAirplaneMode, focus, setFocus, rotationLock, setRotationLock } = useTheme('theme', 'setTheme', 'brightness', 'setBrightness', 'ringtoneVol', 'setRingtoneVol', 'airplaneMode', 'setAirplaneMode', 'focus', 'setFocus', 'rotationLock', 'setRotationLock');
     const music = useMusic();
+    const btConfigured = useBluetoothStore(s => s.configured);
+    const btEnabled    = useBluetoothStore(s => s.enabled);
 
     const [flash, setFlash]       = useState(false);
     const [frosted, setFrosted]   = useState(open);
@@ -33,6 +37,10 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
     useEffect(() => {
         if (open && isFiveM) void fetchNui<{ on: boolean }>('sd-phone:flashlight:state').then(r => setFlash(!!r?.on));
     }, [open]);
+
+    useEffect(() => {
+        if (open && btConfigured) void useBluetoothStore.getState().scan(true);
+    }, [open, btConfigured]);
 
     function toggleAirplane() {
         const next = !airplaneMode;
@@ -48,6 +56,10 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
     function launch(id: string, intent?: unknown) {
         if (intent !== undefined) setLaunchIntent(id, intent);
         onOpenApp(id);
+        onClose();
+    }
+    function openBluetooth() {
+        requestOpenAt({ app: 'settings', page: 'bluetooth' });
         onClose();
     }
 
@@ -90,6 +102,7 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
                     <div className="rounded-[36px] bg-white/[0.10] p-[22px]">
                         <div className="grid grid-cols-4 justify-items-center gap-y-[22px]">
                             <Circle icon={Plane}      on={airplaneMode}     onClick={toggleAirplane}                                   color="#ff9f0a"                 label={t('shell.airplaneMode','Airplane Mode')} />
+                            {btConfigured && <Circle icon={Bluetooth} on={btEnabled} onClick={openBluetooth} color="#0a84ff" label={t('settings.bluetooth','Bluetooth')} />}
                             <Circle icon={Video}                            onClick={() => launch('camera', { mode: 'VIDEO' })}                                         label={t('shell.record','Record')} />
                             <Circle icon={Flashlight} on={flash}            onClick={toggleFlash}                                      color="#ffffff" glyph="#1c1c1e" label={t('shell.flashlight','Flashlight')} />
                             <Circle icon={Moon}       on={focus}            onClick={() => setFocus(!focus)}                           color="#5e5ce6"                 label={t('shell.focus','Focus')} />
