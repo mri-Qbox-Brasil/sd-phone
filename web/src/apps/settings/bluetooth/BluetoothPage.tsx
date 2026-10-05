@@ -11,7 +11,7 @@ import { SubPage } from '../SettingsSubPage';
 
 const RESCAN_MS = 2000;
 
-const GLYPH: Record<string, typeof Bluetooth> = {
+export const DEVICE_GLYPHS: Record<string, typeof Bluetooth> = {
     vehicle: Car,
     audio:   Speaker,
     headset: Headphones,
@@ -19,7 +19,7 @@ const GLYPH: Record<string, typeof Bluetooth> = {
 };
 
 function DeviceGlyph({ kind }: { kind: string }) {
-    const Icon = GLYPH[kind] ?? Bluetooth;
+    const Icon = DEVICE_GLYPHS[kind] ?? Bluetooth;
     return <Icon className="h-[20px] w-[20px] text-black dark:text-white" strokeWidth={2} />;
 }
 

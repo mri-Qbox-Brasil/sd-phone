@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-    Bluetooth, Camera, Contrast, Flashlight, Moon, Music, Pause, Plane, Play,
+    Bluetooth, Camera, Check, Contrast, Flashlight, Moon, Music, Pause, Plane, Play,
     SkipBack, SkipForward, Smartphone, Sun, Video, Volume2, VolumeX,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -8,6 +8,8 @@ import type { LucideIcon } from 'lucide-react';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { setLaunchIntent } from '@/shell/launchIntent';
 import { requestOpenAt } from '@/shell/deeplink';
+import { DEVICE_GLYPHS } from '@/apps/settings/bluetooth/BluetoothPage';
+import type { BluetoothDevice } from '@/stores/bluetoothStore';
 import { useBluetoothStore } from '@/stores/bluetoothStore';
 import { trackFraction } from '@/lib/zoom';
 import { useTheme } from '@/stores/themeStore';
@@ -27,6 +29,7 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
     const btEnabled    = useBluetoothStore(s => s.enabled);
 
     const [flash, setFlash]       = useState(false);
+    const [btModule, setBtModule] = useState(false);
     const [frosted, setFrosted]   = useState(open);
     useEffect(() => {
         if (open) { setFrosted(true); return; }
@@ -40,6 +43,7 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
 
     useEffect(() => {
         if (open && btConfigured) void useBluetoothStore.getState().scan(true);
+        if (!open) setBtModule(false);
     }, [open, btConfigured]);
 
     function toggleAirplane() {
@@ -58,7 +62,7 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
         onOpenApp(id);
         onClose();
     }
-    function openBluetooth() {
+    function openBluetoothSettings() {
         requestOpenAt({ app: 'settings', page: 'bluetooth' });
         onClose();
     }
@@ -102,7 +106,7 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
                     <div className="rounded-[36px] bg-white/[0.10] p-[22px]">
                         <div className="grid grid-cols-4 justify-items-center gap-y-[22px]">
                             <Circle icon={Plane}      on={airplaneMode}     onClick={toggleAirplane}                                   color="#ff9f0a"                 label={t('shell.airplaneMode','Airplane Mode')} />
-                            {btConfigured && <Circle icon={Bluetooth} on={btEnabled} onClick={openBluetooth} color="#0a84ff" label={t('settings.bluetooth','Bluetooth')} />}
+                            {btConfigured && <Circle icon={Bluetooth} on={btEnabled} onClick={() => void useBluetoothStore.getState().setEnabled(!btEnabled)} onLongPress={() => setBtModule(true)} color="#0a84ff" label={t('settings.bluetooth','Bluetooth')} />}
                             <Circle icon={Video}                            onClick={() => launch('camera', { mode: 'VIDEO' })}                                         label={t('shell.record','Record')} />
                             <Circle icon={Flashlight} on={flash}            onClick={toggleFlash}                                      color="#ffffff" glyph="#1c1c1e" label={t('shell.flashlight','Flashlight')} />
                             <Circle icon={Moon}       on={focus}            onClick={() => setFocus(!focus)}                           color="#5e5ce6"                 label={t('shell.focus','Focus')} />
@@ -112,6 +116,121 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
                         </div>
                     </div>
                 </div>
+            </div>
+
+            {btConfigured && <BluetoothModule open={open && btModule} onClose={() => setBtModule(false)} onSettings={openBluetoothSettings} />}
+        </div>
+    );
+}
+
+const BT_RESCAN_MS = 2000;
+
+function btStatus(d: BluetoothDevice): string {
+    if (d.connected) return t('settings.btConnected', 'Connected');
+    if (!d.inRange)  return t('settings.btNotInRange', 'Not in range');
+    if (d.full)      return t('settings.btInUse', 'In use');
+    return '';
+}
+
+/** Expanded Bluetooth module (long press on the tile): power plus connecting to a device right here. */
+function BluetoothModule({ open, onClose, onSettings }: { open: boolean; onClose: () => void; onSettings: () => void }) {
+    const enabled    = useBluetoothStore(s => s.enabled);
+    const devices    = useBluetoothStore(s => s.devices);
+    const loading    = useBluetoothStore(s => s.loading);
+    const busyId     = useBluetoothStore(s => s.busyId);
+    const setEnabled = useBluetoothStore(s => s.setEnabled);
+    const pair       = useBluetoothStore(s => s.pair);
+    const disconnect = useBluetoothStore(s => s.disconnect);
+
+    useEffect(() => {
+        if (!open) return;
+        void useBluetoothStore.getState().scan(true);
+        const id = window.setInterval(() => {
+            if (useBluetoothStore.getState().enabled) void useBluetoothStore.getState().scan(true);
+        }, BT_RESCAN_MS);
+        return () => window.clearInterval(id);
+    }, [open]);
+
+    function press(d: BluetoothDevice) {
+        if (busyId) return;
+        if (d.connected) void disconnect(d.id);
+        else if (d.inRange && !d.full) void pair(d.id);
+    }
+
+    const list = devices
+        .filter(d => d.paired || d.inRange)
+        .sort((a, b) => Number(b.connected) - Number(a.connected) || Number(b.paired) - Number(a.paired));
+    const EASE = 'cubic-bezier(0.32,0.72,0,1)';
+
+    return (
+        <div
+            className={'absolute inset-0 z-10 flex items-center justify-center bg-black/40 px-6 ' + (open ? '' : 'pointer-events-none')}
+            style={{ opacity: open ? 1 : 0, transition: `opacity 260ms ${EASE}` }}
+            onClick={onClose}
+        >
+            <div
+                className="w-full max-w-[340px] rounded-[36px] bg-[#1c1c1e]/[0.97] p-5 text-white"
+                style={{ transform: open ? 'scale(1)' : 'scale(0.92)', transition: `transform 320ms ${EASE}` }}
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        aria-label={t('settings.bluetooth', 'Bluetooth')}
+                        aria-pressed={enabled}
+                        onClick={() => void setEnabled(!enabled)}
+                        className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full transition-colors active:opacity-80"
+                        style={{ background: enabled ? '#0a84ff' : 'rgba(255,255,255,0.15)' }}
+                    >
+                        <Bluetooth className="h-[26px] w-[26px] text-white" />
+                    </button>
+                    <div className="min-w-0">
+                        <p className="text-[19px] font-semibold leading-tight">{t('settings.bluetooth', 'Bluetooth')}</p>
+                        <p className="text-[14px] leading-tight text-white/55">{enabled ? t('settings.on', 'On') : t('settings.off', 'Off')}</p>
+                    </div>
+                </div>
+
+                <div className="my-4 h-px bg-white/15" />
+
+                {!enabled ? (
+                    <p className="py-2 text-[15px] text-white/55">{t('settings.btOffBody', 'Turn it on to find devices around you.')}</p>
+                ) : list.length === 0 ? (
+                    <p className="py-2 text-[15px] text-white/55">{loading ? t('settings.btSearching', 'Searching…') : t('settings.btNothingNearby', 'Nothing nearby')}</p>
+                ) : (
+                    <div className="-mx-2 max-h-[260px] overflow-y-auto">
+                        {list.map(d => {
+                            const Icon = DEVICE_GLYPHS[d.kind] ?? Bluetooth;
+                            const status = busyId === d.id ? t('settings.btConnecting', 'Connecting…') : btStatus(d);
+                            return (
+                                <button
+                                    key={d.id}
+                                    type="button"
+                                    onClick={() => press(d)}
+                                    disabled={!d.connected && (!d.inRange || d.full)}
+                                    className="flex w-full items-center gap-3 rounded-[14px] px-2 py-2 text-start active:bg-white/10 disabled:opacity-45"
+                                >
+                                    <span
+                                        className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full"
+                                        style={{ background: d.connected ? '#0a84ff' : 'rgba(255,255,255,0.15)' }}
+                                    >
+                                        <Icon className="h-[18px] w-[18px] text-white" />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[16px] leading-tight">{d.name}</span>
+                                        {status && <span className="block truncate text-[13px] leading-tight text-white/55">{status}</span>}
+                                    </span>
+                                    {d.connected && <Check className="h-[20px] w-[20px] shrink-0 text-[#0a84ff]" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                <div className="my-4 h-px bg-white/15" />
+
+                <button type="button" onClick={onSettings} className="w-full text-start text-[16px] text-white/85 active:opacity-60">
+                    {t('settings.btSettingsLink', 'Bluetooth Settings…')}
+                </button>
             </div>
         </div>
     );
@@ -163,12 +282,28 @@ function NowPlaying({ music }: { music: ReturnType<typeof useMusic> }) {
     );
 }
 
-function Circle({ icon: Icon, on = false, onClick, color = '#ffffff', glyph = '#ffffff', label }: {
-    icon: LucideIcon; on?: boolean; onClick?: () => void; color?: string; glyph?: string; label: string;
+const HOLD_MS = 450;
+
+function Circle({ icon: Icon, on = false, onClick, onLongPress, color = '#ffffff', glyph = '#ffffff', label }: {
+    icon: LucideIcon; on?: boolean; onClick?: () => void; onLongPress?: () => void; color?: string; glyph?: string; label: string;
 }) {
+    const timer = useRef<number | undefined>(undefined);
+    const held = useRef(false);
+    const cancelHold = () => window.clearTimeout(timer.current);
     return (
         <button
-            onClick={onClick}
+            onPointerDown={() => {
+                if (!onLongPress) return;
+                held.current = false;
+                cancelHold();
+                timer.current = window.setTimeout(() => { held.current = true; onLongPress(); }, HOLD_MS);
+            }}
+            onPointerUp={cancelHold}
+            onPointerLeave={cancelHold}
+            onPointerCancel={cancelHold}
+            onContextMenu={e => { if (onLongPress) e.preventDefault(); }}
+            // The click that ends a long press must not also toggle the tile.
+            onClick={() => { if (held.current) { held.current = false; return; } onClick?.(); }}
             aria-label={label}
             aria-pressed={on}
             className="flex h-[74px] w-[74px] items-center justify-center rounded-full transition-colors active:opacity-80"
