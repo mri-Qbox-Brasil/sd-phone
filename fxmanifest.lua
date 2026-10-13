@@ -26,7 +26,6 @@ server_scripts {
     'server/upload.js',
     'bridge/server/init.lua',
     'server/main.lua',
-    'mri/server/characterdeleted.lua',
 }
 
 ui_page 'web/build/index.html'
