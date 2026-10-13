@@ -1361,6 +1361,10 @@ end
 
 ---The source of the other party in `src`'s current call, or nil outside a live 1:1 session.
 ---
+---A ringing call is not live. The session exists from the moment it is dialled, and the far side
+---answers a recording peer with its microphone and a video peer with its camera, so resolving a
+---peer here before the callee accepts would let a caller listen to someone who never picked up.
+---
 ---A conference has no single peer, and the picture is a plain two-ended WebRTC connection with
 ---nowhere to put a third stream, so video is refused for as long as anyone is merged in. The call
 ---UI hides the Video button on the same condition; this is the half that cannot be lied to.
@@ -1368,7 +1372,7 @@ end
 ---@return number|nil
 local function peerSrc(src)
     local _, s = sessionForSource(src)
-    if not s then return nil end
+    if not s or s.state ~= 'active' then return nil end
     if s.merged then return nil end
     if s.caller.src == src then return s.callee.src end
     if s.callee.src == src then return s.caller.src end

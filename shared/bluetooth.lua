@@ -1,3 +1,6 @@
+---@type table Callable check (shared.callable): keeps a callback that arrived through an export.
+local callable = require 'shared.callable'
+
 ---@type table Pure Bluetooth maths; no natives, no state, so both sides and the test harness can
 ---load it unchanged.
 local bluetooth = {}
@@ -106,8 +109,8 @@ function bluetooth.validate(def)
         entity         = entity,
         range          = range,
         maxConnections = max,
-        onConnect      = type(def.onConnect) == 'function' and def.onConnect or nil,
-        onDisconnect   = type(def.onDisconnect) == 'function' and def.onDisconnect or nil,
+        onConnect      = callable.is(def.onConnect) and def.onConnect or nil,
+        onDisconnect   = callable.is(def.onDisconnect) and def.onDisconnect or nil,
     }
 end
 
