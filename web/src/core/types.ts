@@ -375,6 +375,7 @@ export type NuiMessage =
     | { action: 'sd-phone:camera:key';            data: { key: string } }
     | { action: 'sd-phone:camera:lock';           data: { on: boolean } }
     | { action: 'sd-phone:camera:faceCam';        data: { on: boolean } }
+    | { action: 'sd-phone:camera:useMessage';     data: { id: number; payload: unknown } }
     | { action: 'sd-phone:photos:added';          data: { id: string; url: string; createdAt: string } }
     | { action: 'sd-phone:id:received';           data: ReceivedIdCard }
     | { action: 'sd-phone:medical:scanned';       data: { record?: MedicalId } }
@@ -564,4 +565,5 @@ export type NuiMessage =
     | { action: 'sd-phone:services:invoices' }
     | { action: 'sd-phone:homes:refresh' }
     | { action: 'customApps:set';     data: CustomAppDef[] }
-    | { action: 'customApps:message'; data: { id: string; message: unknown } };
+    | { action: 'customApps:message'; data: { id: string; message: unknown } }
+    | { action: 'customApps:camera';  data: { id: string; use: unknown } };

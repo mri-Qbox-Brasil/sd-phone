@@ -7,6 +7,9 @@ local hints = require 'client.hints'
 local phonecam = require 'client.phonecam'
 ---@type table Hold pose and hand prop (client.pose): the landscape grip is a prop transform.
 local pose = require 'client.pose'
+---@type table The camera lent to a custom app's resource (client.camerause): told here when the
+---viewfinder a call brought up has the view, when its shutter is pressed, and when it has gone.
+local cameraUse = require 'client.camerause'
 ---@type fun(nuiAction: string, serverEvent: string, onAccepted?: fun(), transform?: fun(res: table)) NUI -> server callback proxy (client.nui).
 local proxyCallback = require 'client.nui'
 ---@type fun(res: table) Completes an HTTP upload slot with this client's server address (client.uploadurl).
@@ -170,6 +173,7 @@ local function exitCameraView()
     end
 
     TriggerEvent('sd-phone:client:cameraMode', false, 'camera')
+    cameraUse.viewfinderClosed()
 
     if hidHud   then DisplayHud(true);   hidHud   = false end
     if hidRadar then DisplayRadar(true); hidRadar = false end
@@ -270,6 +274,51 @@ end)
 RegisterNUICallback('sd-phone:camera:open', function(_, cb)
     enterCameraView()
     cb({ success = true, walkable = phonecam.active(), hints = hints.config() })
+end)
+
+---React -> Lua: the viewfinder a custom app's resource called for (exports useCamera) is up and has
+---the view. `id` is the call it was put up for.
+RegisterNUICallback('sd-phone:camera:useOpened', function(data, cb)
+    if not active then cb({ success = false }) return end
+    cameraUse.opened(type(data) == 'table' and data.id or nil)
+    cb({ success = true })
+end)
+
+---React -> Lua: the shutter was pressed in a called camera. No photograph: what it means is the
+---calling resource's.
+RegisterNUICallback('sd-phone:camera:useShutter', function(data, cb)
+    if not active then cb({ success = false }) return end
+    cameraUse.shutter(type(data) == 'table' and data.id or nil)
+    cb({ success = true })
+end)
+
+---React -> Lua: a called camera was taken down by the page. Usually the viewfinder closing has
+---said so already; this is for one that never had the view.
+RegisterNUICallback('sd-phone:camera:useDismissed', function(data, cb)
+    cameraUse.dismissed(type(data) == 'table' and data.id or nil)
+    cb({ success = true })
+end)
+
+---React -> Lua: a custom app's frame has come to the front and asks whether its resource has
+---called the camera up over it.
+RegisterNUICallback('customApps/camera', function(data, cb)
+    cb({ success = true, use = cameraUse.viewFor(type(data) == 'table' and data.id or nil) })
+end)
+
+---Hands the mouse to the game, or takes it back for the phone's cursor, while the viewfinder is
+---up - exports['sd-phone']:setCameraCursor(on). What Alt does in the viewfinder, for a resource
+---whose use of the camera needs the player to aim: with the cursor showing, the mouse moves the
+---cursor and the lens stays where it is.
+---@param on boolean true shows the cursor; false lets the mouse aim the lens
+---@return boolean ok false while the viewfinder is not up
+exports('setCameraCursor', function(on)
+    if not active then return false end
+
+    on = on and true or false
+    SetNuiFocus(on, on)
+    setCursorState(on)
+
+    return true
 end)
 
 ---React -> Lua: the game view renderer is being created - reports the mode the server resolved

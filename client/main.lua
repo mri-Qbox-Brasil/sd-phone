@@ -128,6 +128,8 @@ end
 local weatherBridge = require 'bridge.client.weather'
 ---@type table Custom third-party app registry (client.customapps): add/remove/message + lifecycle.
 local customApps = require 'client.customapps'
+---@type table The camera lent to a custom app's resource (client.camerause).
+local cameraUse = require 'client.camerause'
 ---@type table Hold pose and hand prop (client.pose): owns which clip is held and re-asserts it.
 local pose = require 'client.pose'
 ---@type table Scripted phone camera (client.phonecam): owns the frame-a-shot movement lock.
@@ -1233,6 +1235,55 @@ end)
 ---@return boolean ok, string? err
 exports('sendCustomAppMessage', function(identifier, message)
     return customApps.sendMessage(identifier, message, GetInvokingResource())
+end)
+
+---Calls the phone's camera up over one of your custom apps, for something other than a photograph
+---  exports['sd-phone']:useCamera(identifier, options)
+---
+---  hint       what the shutter does, for the keybind hints, e.g. 'Scan' (optional)
+---  overlay    a page of yours drawn over the viewfinder, click-through:
+---             'yourresource/web/overlay.html' (optional)
+---  onOpen     called when the camera has the view
+---  onShutter  called each time the shutter is pressed; no photograph is taken
+---  onClose    called when the camera has gone: the player closed it, the phone was put away, or
+---             you closed it yourself
+---
+---It is the camera UseCamera puts up for the page side of an app, with the rear lens: zoom, flash
+---and walking are its own, so what is on screen is GetFinalRenderedCamCoord / GetFinalRenderedCamRot
+---and the middle of the viewfinder is the middle of that frame. The phone is opened on the app if
+---it is not already. One resource has the camera at a time.
+---@param identifier string your app's identifier
+---@param options table
+---@return boolean ok, string? err
+exports('useCamera', function(identifier, options)
+    local resource = GetInvokingResource()
+    local ok, err = cameraUse.start(identifier, options, resource)
+
+    if not ok then return false, err end
+
+    -- The camera is the app's: bring the app to the front, opening the phone if it is away.
+    if not OpenApp(identifier) then
+        cameraUse.stop(resource)
+
+        return false, 'the phone could not be opened'
+    end
+
+    return true
+end)
+
+---Puts a called camera away again - exports['sd-phone']:closeCamera(). Only the resource that
+---called it may; its onClose is run.
+---@return boolean ok, string? err
+exports('closeCamera', function()
+    return cameraUse.stop(GetInvokingResource())
+end)
+
+---Pushes a message into the page a called camera has over its viewfinder -
+---exports['sd-phone']:sendCameraMessage(msg) - which receives it as a window `message` event.
+---@param message any
+---@return boolean ok, string? err
+exports('sendCameraMessage', function(message)
+    return cameraUse.send(message, GetInvokingResource())
 end)
 
 ---Flips the session-local disable switch - exports['sd-phone']:setDisabled(disabled). Disabling

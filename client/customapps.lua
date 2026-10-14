@@ -330,6 +330,15 @@ function M.has(identifier)
     return type(identifier) == 'string' and registry[identifier] ~= nil
 end
 
+---The resource that registered an app.
+---@param identifier any
+---@return string|nil resource nil when there is no such app
+function M.owner(identifier)
+    local entry = type(identifier) == 'string' and registry[identifier] or nil
+
+    return entry and entry.resource or nil
+end
+
 ---Every registered app the player currently passes the job and `requires` gates for.
 ---@return table[] defs
 function M.list()

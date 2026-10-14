@@ -26,6 +26,7 @@ server_scripts {
     'server/upload.js',
     'bridge/server/init.lua',
     'server/main.lua',
+    'server/compat/computers.lua', -- sd-computers link (optional; inert unless sd-computers calls it)
 }
 
 ui_page 'web/build/index.html'

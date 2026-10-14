@@ -20,6 +20,7 @@ import { HINT_DEFAULTS, KeyHints, type HintConfig } from '@/ui/KeyHints';
 import { clampZoom, ZOOM_KEY_STEP, ZOOM_PRESETS, ZOOM_WHEEL_RATE, zoomLabel } from '@/shared/lens';
 import { encodeSlice, sliceCount, SLICE_BYTES } from '@/shared/mediaSlice';
 import { uploadDirect, uploadViaServer } from '@/shared/mediaUpload';
+import { resolveCustomUi } from '@/shell/widgets/customUrl';
 import { CAMERA_FILTERS, filterCss, filterLabel } from './filters';
 import { FilterDefs } from './FilterDefs';
 
@@ -102,6 +103,20 @@ interface Photo {
 
 const MODE_OPTIONS = ['VIDEO', 'PHOTO', 'LANDSCAPE'] as const;
 
+/**
+ * The camera called up by a custom app's resource for something other than a photograph
+ * (exports['sd-phone']:useCamera, client/camerause.lua). The shutter is the resource's: pressing it
+ * tells Lua and takes no picture. The lens is the rear one.
+ */
+export interface CameraUse {
+    /** Which call this is. Said back to Lua with everything, so a late answer is not taken for the next call's. */
+    id:       number;
+    /** What the shutter does, for the keybind hints. */
+    hint?:    string;
+    /** A page of the resource's own, drawn over the viewfinder and click-through. */
+    overlay?: string;
+}
+
 const KEY_ACTIONS: Record<string, string> = {
     Enter:       'shutter',
     NumpadEnter: 'shutter',
@@ -140,12 +155,14 @@ const DIRECT_UPLOAD = { slot: 'sd-phone:camera:uploadSlot', done: 'sd-phone:came
 const MAX_REC_MS         = 60000;
 const VIDEO_BITRATE      = 1_200_000;
 
-export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = false, onCapture }: {
+export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = false, onCapture, use }: {
     onClose: () => void;
     onLandscapeChange?: (v: boolean) => void;
     onOpenApp?: (id: string) => void;
     photoOnly?: boolean;
     onCapture?: (url: string) => void;
+    /** Set when a custom app's resource has called the camera: see CameraUse. Goes with photoOnly. */
+    use?: CameraUse;
 }) {
     const [photos,  setPhotos]  = useState<Photo[]>([]);
     const [pending, setPending] = useState(false);
@@ -189,6 +206,16 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
 
     const landscape = mode === 'LANDSCAPE';
     const overlayShown = pending || uploadError !== null;
+
+    const useRefd = useRef(use);
+    useRefd.current = use;
+    const overlayRef = useRef<HTMLIFrameElement>(null);
+
+    // What the calling resource sends is for its own page, over the viewfinder.
+    useNuiEvent('sd-phone:camera:useMessage', (data) => {
+        const called = useRefd.current;
+        if (called && data?.id === called.id) overlayRef.current?.contentWindow?.postMessage(data.payload, '*');
+    });
 
     useEffect(() => {
         if (!photoOnly) return;
@@ -271,6 +298,9 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
             // Dev has no Lua behind it, so an absent payload keeps the defaults rather than blanking
             // the list.
             setHintCfg({ ...HINT_DEFAULTS, ...(res?.hints ?? {}) });
+            // Called up by a resource: it is waiting to hear that the camera has the view.
+            const called = useRefd.current;
+            if (called) void fetchNui('sd-phone:camera:useOpened', { id: called.id });
         });
 
         void getGameRender().then((render) => {
@@ -372,6 +402,8 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         switch (key) {
             case 'shutter':  handleShutter(); break;
             case 'flip': {
+                // A called camera frames with the rear lens.
+                if (useRefd.current) break;
                 const next = !selfie;
                 setSelfie(next);
                 void fetchNui('sd-phone:camera:selfie', { on: next });
@@ -647,6 +679,11 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     }
 
     function handleShutter() {
+        if (use) {
+            // Not a photograph: what the shutter means here is the calling resource's to say.
+            void fetchNui('sd-phone:camera:useShutter', { id: use.id });
+            return;
+        }
         if (mode === 'VIDEO') {
             if (recording) stopRecording(); else void startRecording();
         } else {
@@ -660,8 +697,9 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     const hints = (photoOnly ? CONTROL_HINTS.filter(h => h.label !== 'Change Mode') : CONTROL_HINTS)
         .map(h => ({
             keys:  h.keys,
-            label: hintLabel(h.label, angleLocked, facingCam),
-            shown: !h.selfieOnly || selfie,
+            // In a called camera the shutter does what the caller says, and there is no flip.
+            label: use?.hint && h.label === 'Take Photo' ? use.hint : hintLabel(h.label, angleLocked, facingCam),
+            shown: (!h.selfieOnly || selfie) && !(use && h.label === 'Flip Camera'),
         }));
 
     return (
@@ -740,6 +778,19 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                             : { display: 'block', inset: 0, width: '100%', height: '100%', filter: filterStyle }
                     }
                 />
+
+                {/* The caller's own page, over the picture and under everything of the camera's.
+                    Click-through: the viewfinder keeps its wheel zoom, and the page is told things,
+                    not asked. */}
+                {use?.overlay && (
+                    <iframe
+                        ref={overlayRef}
+                        title={use.hint ?? 'overlay'}
+                        src={resolveCustomUi(use.overlay)}
+                        className="pointer-events-none absolute inset-0 z-[14] h-full w-full border-0"
+                        style={{ background: 'transparent', colorScheme: 'normal' }}
+                    />
+                )}
 
                 {showGrid && (
                     <div className="pointer-events-none absolute inset-0 z-[15]">
@@ -937,7 +988,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                         type="button"
                         onClick={handleShutter}
                         disabled={pending && !recording}
-                        aria-label={mode === 'VIDEO' ? (recording ? t('camera.stopRecording', 'Stop recording') : t('camera.startRecording', 'Start recording')) : t('camera.takePhoto', 'Take photo')}
+                        aria-label={use?.hint ? use.hint : mode === 'VIDEO' ? (recording ? t('camera.stopRecording', 'Stop recording') : t('camera.startRecording', 'Start recording')) : t('camera.takePhoto', 'Take photo')}
                         className="group relative flex h-[74px] w-[74px] items-center justify-center rounded-full ring-[3px] ring-white active:opacity-90 disabled:opacity-60"
                     >
                         {mode === 'VIDEO' ? (
@@ -962,9 +1013,11 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                             setSelfie(next);
                             void fetchNui('sd-phone:camera:selfie', { on: next });
                         }}
+                        disabled={use !== undefined}
                         className={[
                             'flex h-[58px] w-[58px] items-center justify-center rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.4)] backdrop-blur-md transition-transform active:scale-95',
                             selfie ? 'bg-[#FFD60A] text-black' : 'bg-white/15 text-white active:bg-white/25',
+                            use ? 'invisible' : '',
                         ].join(' ')}
                     >
                         <RotateCw className="h-[27px] w-[27px]" strokeWidth={2.2} />
