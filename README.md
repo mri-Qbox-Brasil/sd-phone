@@ -3,7 +3,7 @@
 # sd-phone
 
 <a href="https://www.youtube.com/watch?v=65EoH00dlhw">
-  <img width="960" alt="sd-phone banner showing Home, Maps and Wallet" src="docs/previews/sd-phone-banner.webp">
+  <img width="960" alt="sd-phone banner showing the Home screen in front of a wall of app screens" src="docs/previews/sd-phone-banner.webp">
 </a>
 
 <sub>▶ **[Video demo](https://www.youtube.com/watch?v=65EoH00dlhw)**</sub>
@@ -187,6 +187,7 @@ The phone ships a full integration surface, documented at [docs.samueldev.shop](
 - [Server exports](https://docs.samueldev.shop/resources/phone/exports-server) for sending mail, messages and notifications, starting calls, managing contacts, resolving numbers to players, logging transactions, posting news, and more.
 - [Client exports](https://docs.samueldev.shop/resources/phone/exports-client) for opening the phone, deep-linking into apps, and gating phone use.
 - [Custom apps](https://docs.samueldev.shop/resources/phone/custom-apps) for shipping your own apps on the phone, with ready-made [templates](https://github.com/Samuels-Development/sd-phone-app-templates) for plain JS, React, Vue and Svelte. Apps written for lb-phone register and run unmodified.
+- **The camera, for more than photos.** A custom app's resource can call the phone's camera up over its app and take the shutter for itself: `exports['sd-phone']:useCamera(identifier, { hint, overlay, onOpen, onShutter, onClose })`. `onShutter` is called where a photo would have been taken (scan what is in the picture, read a plate, mark a spot), and `overlay` is a page of the resource's own drawn over the viewfinder (`sendCameraMessage(msg)` reaches it as a window `message` event). The lens, zoom, flash and walking stay the camera's. `closeCamera()` puts it away and `setCameraCursor(on)` hands the mouse to the lens or back. The page side of an app still has `UseCamera` for a plain photo. The exports are documented where they are declared, in `client/main.lua` and `client/apps/camera.lua`.
 - [First-party events](https://docs.samueldev.shop/resources/phone/events-server) on every lifecycle moment: messages, mail, calls, transactions, posts, contacts.
 - [lb-phone compatibility](https://docs.samueldev.shop/resources/phone/lb-phone-compatibility) covering exports, events, and `dependency 'lb-phone'` lines.
 
