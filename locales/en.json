@@ -1246,6 +1246,10 @@
     "noMarketsAccountUsername": "no Markets account for that username",
     "symbolPositiveAmountRequired": "symbol and a positive amount are required"
   },
+  "computers": {
+    "linkDisabled": "Phone link disabled for {resource}",
+    "unknownAction": "Unknown link action {action}"
+  },
   "connectfour": {
     "computer": "Computer",
     "computerThinking": "Computer is thinking…",

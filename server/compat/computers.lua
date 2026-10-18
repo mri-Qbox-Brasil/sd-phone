@@ -396,11 +396,11 @@ exports('computerLink', function(src, app, action, payload)
     local caller = GetInvokingResource()
     local allow = allowed()
     if not allow or (caller and not allow[caller]) then
-        return fail('common.forbidden', 'Phone link disabled for ' .. tostring(caller))
+        return fail('computers.linkDisabled', 'Phone link disabled for {resource}', { resource = tostring(caller) })
     end
     if type(src) ~= 'number' or not GetPlayerName(src) then return fail('mail.playerNotFound', 'Player not found') end
     local h = handlers[app] and handlers[app][action]
-    if not h then return fail('common.badRequest', ('Unknown link action %s.%s'):format(tostring(app), tostring(action))) end
+    if not h then return fail('computers.unknownAction', 'Unknown link action {action}', { action = tostring(app) .. '.' .. tostring(action) }) end
     local good, res = pcall(h, src, type(payload) == 'table' and payload or {})
     if not good then
         print(('^1[sd-phone] computer link %s.%s failed: %s^0'):format(app, action, tostring(res)))
