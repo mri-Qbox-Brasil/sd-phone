@@ -1361,3 +1361,9 @@ require 'client.compat.yseries'
 require 'client.compat.qssmartphone'
 require 'client.compat.gksphone'
 require 'client.compat.roadphone'
+
+---Tells custom apps the phone is up: every export exists once this fires, on every start of sd-phone.
+---Apps register on it (AddEventHandler('sd-phone:ready', register)) instead of polling the resource state.
+CreateThread(function()
+    TriggerEvent('sd-phone:ready')
+end)

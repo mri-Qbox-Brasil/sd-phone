@@ -1,5 +1,5 @@
 {
-    "entry": ["index.html"],
+    "entry": ["index.html", "src/sdk/index.ts"],
     "project": ["src/**/*.{ts,tsx}"],
     "ignoreExportsUsedInFile": true,
     "tags": ["-testseam"],

@@ -1,8 +1,16 @@
 /**
  * Type definitions for the sd-phone custom-app SDK (sdphone-sdk.js).
  *
- * sd-phone injects sdphone-sdk.js into your app's iframe AFTER the page has loaded, so nothing here
- * exists at parse time. Wait for it before calling anything:
+ * Load it yourself, first thing in your page's <head>, and every global below exists from the first
+ * line of your own code (sd-phone 1.1 and newer):
+ *
+ *     <script src="https://cfx-nui-sd-phone/web/build/sdphone-sdk.js"></script>
+ *
+ * Calls made before the phone has attached to your page wait for it and then run in order.
+ * `await sdphone.ready` when you need the phone to be there, for example before reading `settings`.
+ *
+ * Pages that do not load it get it injected by the phone AFTER the page has loaded, so nothing here
+ * exists at parse time. Those pages wait for it before calling anything:
  *
  *     function whenReady() {
  *       return new Promise(resolve => {
@@ -68,7 +76,10 @@ declare global {
     const resourceName: string;
     const settings: PhoneSettings;
 
-    /** True once sdphone-sdk.js has finished installing. Poll this; see the header. */
+    /** Present once sdphone-sdk.js has installed. `ready` resolves when the phone has attached. */
+    var sdphone: { readonly ready: Promise<void>; readonly version: number };
+
+    /** True once the phone has attached to the page. Poll this; see the header. */
     const componentsLoaded: boolean;
     /** Bumped whenever the SDK surface changes. */
     const componentsVersion: number;

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { sdkAssets } from './vite-plugin-sdk.ts';
 
 // 3D models ride inside their importing chunk as data URLs. FiveM's NUI file server answers
 // 404 for a .glb even when fxmanifest lists it, so a separate asset file never reaches the
@@ -19,7 +20,7 @@ function inlineModels(): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-    plugins: [inlineModels(), react()],
+    plugins: [inlineModels(), react(), sdkAssets()],
     base: './',
     resolve: {
         alias: {

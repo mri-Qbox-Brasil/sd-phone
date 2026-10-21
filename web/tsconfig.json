@@ -17,5 +17,7 @@
         "noUnusedParameters": true,
         "noFallthroughCasesInSwitch": true
     },
-    "include": ["src"]
+    "include": ["src"],
+    // The app SDK is checked on its own (src/sdk/tsconfig.json), against its public contract.
+    "exclude": ["src/sdk"]
 }

@@ -5,8 +5,8 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc --noEmit && vite build",
-        "build:demo": "tsc --noEmit && vite build --mode demo",
+        "build": "tsc --noEmit && tsc -p src/sdk && vite build && node scripts/check-build.mjs",
+        "build:demo": "tsc --noEmit && tsc -p src/sdk && vite build --mode demo && node scripts/check-build.mjs build-demo",
         "preview": "vite preview",
         "lint": "oxlint src",
         "test": "vitest run --passWithNoTests",
@@ -38,7 +38,7 @@
         "postcss": "^8.5.28",
         "tailwindcss": "^3.4.19",
         "typescript": "^7.0.2",
-        "vite": "^8.3.1",
+        "vite": "^8.3.4",
         "vitest": "^4.1.11"
     },
     "license": "GPL-3.0-or-later"

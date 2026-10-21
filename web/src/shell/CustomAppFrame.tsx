@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { device } from '@device';
 import { fetchNui, hostResource } from '@/core/nui';
+import type { HostMessage, PageMessage, PhoneEndpoint } from '@/sdk/protocol';
+import { loadInter, pageVarsCss, phoneVars } from './appPageTheme';
 import { apiData } from '@/core/api';
 import { accountsMyEmail, accountsSaveCustomPassword } from '@/core/accountsApi';
 import { apiSavePhotoFromUrl } from '@/core/photosApi';
@@ -84,6 +86,22 @@ function applyPhoneTheme(body: HTMLElement) {
     }
     for (const name of Array.from(body.style)) if (name.startsWith('--')) body.style.removeProperty(name);
     for (const [name, value] of Object.entries(vars)) body.style.setProperty(name, value);
+}
+
+// The --phone-* colours, read off the iframe element: it sits inside the phone's themed wrapper,
+// so the theme tokens computed on it are the ones the phone's own apps are drawn with. They go in a
+// <style> at the very start of the page, so the page's own rules still win over them.
+function applyPageVars(iframe: HTMLIFrameElement, doc: Document) {
+    const computed = getComputedStyle(iframe);
+    const css = pageVarsCss(phoneVars(token => computed.getPropertyValue(token)));
+    let style = doc.querySelector<HTMLStyleElement>('style[data-sd-phone-vars]');
+    if (!style) {
+        style = doc.createElement('style');
+        style.setAttribute('data-sd-phone-vars', '');
+        const parent = doc.head ?? doc.documentElement;
+        parent.insertBefore(style, parent.firstChild);
+    }
+    style.textContent = css;
 }
 
 function buildSettings(): Record<string, unknown> {
@@ -235,7 +253,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
     }, []);
 
     const streamPopupInput = useCallback((value: string) => {
-        postToApp({ type: 'popUpInputChanged', value });
+        postToApp({ type: 'popUpInputChanged', value } satisfies HostMessage);
     }, [postToApp]);
 
     const notify = useCallback((data: Record<string, unknown>) => {
@@ -314,7 +332,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
         return { bytes, keys };
     }, []);
 
-    const fetchPhone = useCallback((event: string, data?: any): Promise<unknown> => {
+    const fetchPhone = useCallback((event: PhoneEndpoint, data?: any): Promise<unknown> => {
         switch (event) {
             case 'SetPopUp':
                 return new Promise(res => { popupResolve.current = res; setPopup(data ?? null); });
@@ -410,7 +428,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
 
     useEffect(() => {
         if (!loadedRef.current) return;
-        postToApp({ type: active ? 'appOpen' : 'appClose', data: { id: defRef.current?.id } });
+        postToApp({ type: active ? 'appOpen' : 'appClose', data: { id: defRef.current?.id } } satisfies HostMessage);
     }, [active, ready, postToApp]);
 
     const bridge = useMemo(() => {
@@ -534,6 +552,8 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
                 applyPhoneTheme(doc.body);
                 doc.body.setAttribute('data-device', 'phone');
             }
+            if (doc.documentElement) applyPageVars(iframe, doc);
+            void loadInter(doc);
             win.resourceName      = d.resource;
             win.appName           = d.name;
             win.appIdentifier     = d.id;
@@ -583,14 +603,16 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
         try {
             const body = iframe.contentDocument?.body;
             if (body) applyPhoneTheme(body);
+            const doc = iframe.contentDocument;
+            if (doc?.documentElement) applyPageVars(iframe, doc);
         } catch { /* cross-origin */ }
-        postToApp({ type: 'settingsUpdated', settings: buildSettings() });
+        postToApp({ type: 'settingsUpdated', settings: buildSettings() } satisfies HostMessage);
     }, [theme, darkTheme, lightTheme, accent, customPalettes, airplaneMode, hour24, brightness, postToApp]);
 
     useEffect(() => {
         function onFrameMessage(event: MessageEvent) {
             if (event.source !== iframeRef.current?.contentWindow) return;
-            const msg = event.data as { type?: string; message?: string } | null;
+            const msg = event.data as PageMessage | null;
             if (!msg || typeof msg.type !== 'string') return;
             if (msg.type === 'sdphoneDebug' && typeof msg.message === 'string') { frameDebug(msg.message); return; }
             if (msg.type === 'sdphoneSdkReady') markSdkReady();
