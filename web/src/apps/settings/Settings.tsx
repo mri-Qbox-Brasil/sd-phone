@@ -22,6 +22,7 @@ import { WallpaperPage } from './appearance/WallpaperPage';
 import { SimBackupPage } from './sim/SimBackupPage';
 import { BluetoothPage } from './bluetooth/BluetoothPage';
 import { WifiPage } from './wifi/WifiPage';
+import { RemotePage } from '@/mri/remote/RemotePage';
 import { useWifiConnected } from '@/stores/wifiStore';
 import { shellHostsPet } from '@/shell/chassis';
 import { shellFor } from '@/shell/shells';
@@ -95,6 +96,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         : subPage === 'sim'           ? <SimBackupPage         onBack={handleBack} />
         : subPage === 'wifi'          ? <WifiPage              onBack={handleBack} />
         : subPage === 'bluetooth'     ? <BluetoothPage         onBack={handleBack} />
+        : subPage === 'remote'        ? <RemotePage            onBack={handleBack} />
         : null;
 
     return (

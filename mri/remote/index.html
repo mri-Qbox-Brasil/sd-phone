@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0f">
+<meta name="robots" content="noindex">
+<title>Remote</title>
+<style>
+    :root {
+        --bg: #0b0b0f;
+        --panel: #16161c;
+        --line: rgba(255, 255, 255, 0.1);
+        --text: #f5f5f7;
+        --muted: #8e8e93;
+        --accent: #0a84ff;
+        --ok: #34c759;
+        --bad: #ff453a;
+        --gap: 16px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; overscroll-behavior: none; }
+    body {
+        font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        display: flex; flex-direction: column;
+        padding: calc(env(safe-area-inset-top) + 12px) var(--gap) calc(env(safe-area-inset-bottom) + 12px);
+        gap: 12px; user-select: none; -webkit-user-select: none;
+    }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
+    header h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+    .status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .status i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .status[data-state="connected"] i { background: var(--ok); }
+    .status[data-state="bad"] i { background: var(--bad); }
+
+    .stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+    .pad {
+        position: relative; border-radius: 34px; border: 1px solid var(--line);
+        background: radial-gradient(120% 80% at 50% 0%, #1f1f27 0%, var(--panel) 60%);
+        touch-action: none; overflow: hidden; max-width: 100%; max-height: 100%;
+    }
+    .pad .hint {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px; padding: 28px; text-align: center; color: var(--muted); font-size: 15px; pointer-events: none;
+        transition: opacity 200ms ease;
+    }
+    .pad .hint svg { width: 40px; height: 40px; opacity: 0.7; }
+    .pad.touched .hint[data-kind="hint"] { opacity: 0; }
+    .pad .hint button { pointer-events: auto; }
+    .dot {
+        position: absolute; left: 0; top: 0; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+        background: rgba(255, 255, 255, 0.18); border: 1.5px solid rgba(255, 255, 255, 0.5);
+        opacity: 0; pointer-events: none; transition: opacity 140ms ease;
+    }
+    .dot.on { opacity: 1; }
+
+    .keys { display: none; gap: 8px; }
+    .keys.on { display: flex; }
+    .keys input {
+        flex: 1; min-width: 0; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel);
+        color: var(--text); font: inherit; padding: 0 14px; outline: none; user-select: text; -webkit-user-select: text;
+    }
+    .keys input:focus { border-color: var(--accent); }
+    .keys .note { font-size: 13px; color: var(--muted); align-self: center; }
+
+    nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    button {
+        appearance: none; border: 0; font: inherit; color: var(--text); cursor: pointer;
+        background: var(--panel); border-radius: 14px; min-height: 64px; padding: 8px 4px; line-height: 1.15; text-align: center;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+        font-size: 12px; transition: background 120ms ease, opacity 120ms ease;
+    }
+    button:active { background: #24242c; }
+    button:disabled { opacity: 0.35; }
+    button svg { width: 22px; height: 22px; }
+    button.primary { background: var(--accent); min-height: 44px; padding: 0 18px; font-size: 15px; font-weight: 600; flex-direction: row; }
+    button.send { min-height: 44px; padding: 0 16px; flex-direction: row; font-size: 15px; }
+    svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<header>
+    <h1 id="title"></h1>
+    <span class="status" id="status" data-state="idle"><i></i><span id="statusText"></span></span>
+</header>
+
+<main class="stage" id="stage">
+    <div class="pad" id="pad">
+        <div class="hint" id="hint" data-kind="hint">
+            <svg viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V10"/><path d="M12 10V8.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11v-1a1.5 1.5 0 0 1 3 0v4a6 6 0 0 1-6 6h-1a6 6 0 0 1-4.6-2.2L4 14.5a1.5 1.5 0 0 1 2.3-1.9L9 15"/></svg>
+            <span id="hintText"></span>
+            <button class="primary" id="hintAction" hidden></button>
+        </div>
+        <div class="dot" id="dot"></div>
+    </div>
+</main>
+
+<form class="keys" id="keys" autocomplete="off">
+    <input id="typing" type="text" autocomplete="off" autocapitalize="sentences" enterkeyhint="send" spellcheck="false">
+    <button class="send" id="send" type="submit"></button>
+</form>
+
+<nav>
+    <button id="back" type="button" disabled>
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span></span>
+    </button>
+    <button id="home" type="button" disabled>
+        <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg><span></span>
+    </button>
+    <button id="keyboard" type="button" disabled>
+        <svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg><span></span>
+    </button>
+    <button id="toggle" type="button" disabled>
+        <svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg><span></span>
+    </button>
+</nav>
+
+<script>
+(function () {
+    var config = /*MRI_REMOTE_CONFIG*/null || { expired: true, strings: {}, iceServers: [] };
+    var S = config.strings || {};
+    var GATHER_MS = 3500;
+
+    var $ = function (id) { return document.getElementById(id); };
+    var pad = $('pad'), dot = $('dot'), hint = $('hint'), hintText = $('hintText'), hintAction = $('hintAction');
+    var keys = $('keys'), typing = $('typing');
+
+    var channel = null;
+    var aspect = 440 / 956;
+    var phoneOpen = false;
+    var field = { on: false, value: '', kind: 'text' };
+    var buffer = '';
+    var ended = false;
+
+    function text(key) { return S[key] || ''; }
+
+    function label(id, key) { $(id).querySelector('span').textContent = text(key); }
+
+    document.title = text('title') || document.title;
+    $('title').textContent = text('title');
+    label('back', 'back');
+    label('home', 'home');
+    label('keyboard', 'keyboard');
+    $('send').textContent = text('send');
+    typing.placeholder = text('typeHere');
+
+    function setStatus(state, message) {
+        $('status').dataset.state = state;
+        $('statusText').textContent = message;
+    }
+
+    function setHint(kind, message, action) {
+        hint.dataset.kind = kind;
+        hintText.textContent = message;
+        hintAction.hidden = !action;
+        if (action) hintAction.textContent = action;
+        if (kind !== 'hint') pad.classList.remove('touched');
+    }
+
+    function fit() {
+        var stage = $('stage').getBoundingClientRect();
+        var w = stage.width, h = w / aspect;
+        if (h > stage.height) { h = stage.height; w = h * aspect; }
+        pad.style.width = Math.floor(w) + 'px';
+        pad.style.height = Math.floor(h) + 'px';
+        pad.style.borderRadius = Math.round(w * 0.12) + 'px';
+    }
+    window.addEventListener('resize', fit);
+    fit();
+
+    function send(msg) {
+        if (channel && channel.readyState === 'open') channel.send(JSON.stringify(msg));
+    }
+
+    function setControls(on) {
+        ['back', 'home', 'keyboard', 'toggle'].forEach(function (id) { $(id).disabled = !on; });
+        $('back').disabled = $('home').disabled = $('keyboard').disabled = !on || !phoneOpen;
+    }
+
+    function showOpenState() {
+        label('toggle', phoneOpen ? 'putAway' : 'openPhone');
+        setControls(true);
+        if (phoneOpen) {
+            setHint('hint', text('hint'));
+        } else {
+            keys.classList.remove('on');
+            typing.blur();
+            setHint('closed', text('closed'), text('openPhone'));
+        }
+    }
+
+    function finish(state, key) {
+        if (ended) return;
+        ended = true;
+        channel = null;
+        setStatus('bad', '');
+        setControls(false);
+        keys.classList.remove('on');
+        setHint(state, text(key));
+    }
+
+    function syncField(next) {
+        field = next;
+        if (!field.on) return;
+        buffer = field.value || '';
+        if (document.activeElement !== typing || typing.value !== buffer) typing.value = buffer;
+        typing.type = field.kind === 'secret' ? 'password' : 'text';
+        typing.inputMode = field.kind === 'number' ? 'numeric' : 'text';
+    }
+
+    function onMessage(raw) {
+        var msg;
+        try { msg = JSON.parse(raw); } catch (e) { return; }
+        if (msg.t === 'hello' || msg.t === 'screen') {
+            if (msg.aspect > 0.2 && msg.aspect < 5) { aspect = msg.aspect; fit(); }
+        }
+        if (msg.t === 'hello' || msg.t === 'open') {
+            phoneOpen = !!msg.open;
+            showOpenState();
+        }
+        if (msg.t === 'hello' && msg.field) syncField(msg.field);
+        if (msg.t === 'field') syncField(msg);
+    }
+
+    // Touch pad: one finger, positions normalized to the phone screen, moves batched per frame.
+    var activeId = null, pendingMove = null, frame = 0;
+
+    function norm(e) {
+        var r = pad.getBoundingClientRect();
+        return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, px: e.clientX - r.left, py: e.clientY - r.top };
+    }
+
+    function moveDot(p) { dot.style.transform = 'translate(' + p.px + 'px,' + p.py + 'px)'; }
+
+    function flushMove() {
+        frame = 0;
+        if (!pendingMove) return;
+        send({ t: 'p', e: 'move', x: pendingMove.x, y: pendingMove.y });
+        pendingMove = null;
+    }
+
+    pad.addEventListener('pointerdown', function (e) {
+        if (activeId !== null || !channel || !phoneOpen) return;
+        if (e.target === hintAction) return;
+        activeId = e.pointerId;
+        pad.setPointerCapture(e.pointerId);
+        pad.classList.add('touched');
+        var p = norm(e);
+        moveDot(p);
+        dot.classList.add('on');
+        if (navigator.vibrate) navigator.vibrate(6);
+        send({ t: 'p', e: 'down', x: p.x, y: p.y });
+        e.preventDefault();
+    });
+    pad.addEventListener('pointermove', function (e) {
+        if (e.pointerId !== activeId) return;
+        var p = norm(e);
+        moveDot(p);
+        pendingMove = p;
+        if (!frame) frame = requestAnimationFrame(flushMove);
+    });
+    function release(e, phase) {
+        if (e.pointerId !== activeId) return;
+        activeId = null;
+        if (frame) { cancelAnimationFrame(frame); frame = 0; }
+        pendingMove = null;
+        var p = norm(e);
+        dot.classList.remove('on');
+        send({ t: 'p', e: phase, x: p.x, y: p.y });
+    }
+    pad.addEventListener('pointerup', function (e) { release(e, 'up'); });
+    pad.addEventListener('pointercancel', function (e) { release(e, 'cancel'); });
+    pad.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+    hintAction.addEventListener('click', function () { send({ t: 'toggle' }); });
+    $('toggle').addEventListener('click', function () { send({ t: 'toggle' }); });
+    $('back').addEventListener('click', function () { send({ t: 'key', k: 'Escape' }); });
+    $('home').addEventListener('click', function () { send({ t: 'home' }); });
+    $('keyboard').addEventListener('click', function () {
+        var open = !keys.classList.contains('on');
+        keys.classList.toggle('on', open);
+        if (!open) { typing.blur(); return; }
+        typing.value = buffer;
+        typing.placeholder = field.on ? text('typeHere') : text('noField');
+        typing.focus();
+        requestAnimationFrame(fit);
+    });
+
+    // Sends each change as one splice (position, removed count, inserted text), which survives autocorrect and IME.
+    typing.addEventListener('input', function () {
+        var next = typing.value, prev = buffer;
+        if (!field.on) { typing.value = ''; buffer = ''; return; }
+        var p = 0;
+        while (p < prev.length && p < next.length && prev[p] === next[p]) p++;
+        var s = 0;
+        while (s < prev.length - p && s < next.length - p && prev[prev.length - 1 - s] === next[next.length - 1 - s]) s++;
+        var del = prev.length - p - s, ins = next.slice(p, next.length - s);
+        buffer = next;
+        if (del || ins) send({ t: 'edit', at: p, del: del, ins: ins });
+    });
+    keys.addEventListener('submit', function (e) {
+        e.preventDefault();
+        send({ t: 'key', k: 'Enter' });
+    });
+
+    if (config.expired) {
+        setStatus('bad', '');
+        setHint('expired', text('expired'));
+        return;
+    }
+
+    setStatus('idle', text('connecting'));
+    setHint('connecting', text('connecting'));
+
+    function gathered(pc) {
+        if (pc.iceGatheringState === 'complete') return Promise.resolve();
+        return new Promise(function (resolve) {
+            var timer = setTimeout(resolve, GATHER_MS);
+            pc.addEventListener('icegatheringstatechange', function () {
+                if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+            });
+        });
+    }
+
+    var pc = new RTCPeerConnection({ iceServers: config.iceServers || [] });
+    var dc = pc.createDataChannel('remote', { ordered: true });
+    dc.onopen = function () {
+        channel = dc;
+        setStatus('connected', text('connected'));
+        showOpenState();
+    };
+    dc.onmessage = function (e) { onMessage(e.data); };
+    dc.onclose = function () { finish('ended', 'ended'); };
+    pc.onconnectionstatechange = function () {
+        if (pc.connectionState === 'failed') finish('failed', channel ? 'ended' : 'failed');
+    };
+
+    pc.createOffer()
+        .then(function (offer) { return pc.setLocalDescription(offer); })
+        .then(function () { return gathered(pc); })
+        .then(function () {
+            return fetch(location.pathname.replace(/\/+$/, '') + '/offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sdp: pc.localDescription.sdp }),
+            });
+        })
+        .then(function (res) { return res.json().catch(function () { return { ok: false }; }); })
+        .then(function (body) {
+            if (!body || !body.ok || typeof body.sdp !== 'string') {
+                pc.close();
+                return finish(body && body.code === 'timeout' ? 'failed' : 'expired', body && body.code === 'timeout' ? 'failed' : 'expired');
+            }
+            return pc.setRemoteDescription({ type: 'answer', sdp: body.sdp });
+        })
+        .catch(function () { pc.close(); finish('failed', 'failed'); });
+})();
+</script>
+</body>
+</html>

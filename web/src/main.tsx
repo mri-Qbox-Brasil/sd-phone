@@ -19,10 +19,12 @@ import { ErrorBoundary } from '@/shell/ErrorBoundary';
 import { useMocks } from '@/core/demo';
 import { initTileCheck } from '@/apps/maps/tileCheck';
 import { installScrollGuard } from '@/core/scrollGuard';
+import { installRemote } from '@/mri/remote/session';
 import './index.css';
 
 initTileCheck();
 installScrollGuard();
+installRemote();
 
 document.addEventListener('mousedown', e => {
     if ((e.target as HTMLElement | null)?.closest?.('.select-text')) return;

@@ -7354,5 +7354,43 @@
     "uploadLimitReached": "Limite de envios atingido, tente de novo mais tarde",
     "voicemailNotFound": "Correio de voz não encontrado",
     "voicemailTitle": "Correio de Voz"
+  },
+  "remote": {
+    "cancel": "Cancelar",
+    "connected": "Conectado",
+    "connectedFooter": "O toque e o que você digita no seu celular chegam direto neste, sem passar pelo servidor.",
+    "connecting": "Conectando…",
+    "disconnect": "Desconectar",
+    "errCooldown": "Espere um pouco antes de gerar outro código.",
+    "errExpired": "O código expirou antes de um celular ler.",
+    "errP2p": "Não deu pra conectar direto com esse celular. Tente com os dois na mesma rede Wi-Fi.",
+    "errServer": "Não deu pra gerar o código agora.",
+    "errUnavailable": "Este servidor não tem um endereço que o celular consiga abrir. Peça à staff pra configurar o sd_phone_remote_url.",
+    "idleFooter": "Controle este celular pelo seu celular de verdade: leia o código e toque na tela dele pra tocar, rolar e digitar aqui.",
+    "keywords": "qr code, controle remoto, controle, toque",
+    "makeCode": "Mostrar código",
+    "making": "Gerando o código…",
+    "page": {
+      "back": "Voltar",
+      "closed": "O celular está guardado",
+      "connected": "Conectado",
+      "connecting": "Conectando ao seu celular…",
+      "ended": "Desconectado. Leia um código novo no Ajustes pra conectar de novo.",
+      "expired": "Este código expirou. Abra o Ajustes no celular do jogo e leia um novo.",
+      "failed": "Não deu pra conectar direto com o jogo. Tente com os dois na mesma rede Wi-Fi.",
+      "hint": "Toque aqui pra usar o celular do jogo",
+      "home": "Início",
+      "keyboard": "Teclado",
+      "noField": "Toque antes num campo de texto do celular",
+      "openPhone": "Pegar o celular",
+      "putAway": "Guardar",
+      "send": "Enviar",
+      "title": "Controle do celular",
+      "typeHere": "Digite aqui"
+    },
+    "rowSub": "Controle este celular pelo seu celular de verdade",
+    "scan": "Leia com o seu celular",
+    "scanFooter": "Aponte a câmera do seu celular pro código. Abre em qualquer navegador, e o código vale uma vez, por 5 minutos.",
+    "title": "Controle remoto"
   }
 }

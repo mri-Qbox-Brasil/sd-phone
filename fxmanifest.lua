@@ -17,6 +17,7 @@ client_scripts {
     'mri/client/keybind.lua',
     'mri/client/weather.lua',
     'client/main.lua',
+    'mri/client/remote.lua',
 }
 
 server_scripts {
@@ -25,6 +26,8 @@ server_scripts {
     'server/relay.js',
     'server/upload.js',
     'bridge/server/init.lua',
+    'mri/server/lanip.js',
+    'mri/server/remote.lua',
     'server/main.lua',
     'server/compat/computers.lua', -- sd-computers link (optional; inert unless sd-computers calls it)
 }

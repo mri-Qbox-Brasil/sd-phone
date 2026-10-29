@@ -1,6 +1,6 @@
 import { t } from '@/i18n';
 
-export const SETTINGS_PAGES = ['general', 'accessibility', 'display', 'island-pet', 'wallpaper', 'app-icons', 'home-density', 'notifications', 'sound-haptics', 'face-unlock', 'phone', 'streamer', 'sim', 'wifi', 'bluetooth'] as const;
+export const SETTINGS_PAGES = ['general', 'accessibility', 'display', 'island-pet', 'wallpaper', 'app-icons', 'home-density', 'notifications', 'sound-haptics', 'face-unlock', 'phone', 'streamer', 'sim', 'wifi', 'bluetooth', 'remote'] as const;
 
 export type SettingsPage = typeof SETTINGS_PAGES[number];
 
@@ -16,7 +16,7 @@ export type IconName =
     | 'ShoppingBag' | 'CreditCard' | 'Gamepad2' | 'Lock' | 'Mail'
     | 'User' | 'Calendar' | 'StickyNote' | 'ListTodo' | 'Mic'
     | 'Phone' | 'MessageCircle' | 'Video' | 'Compass' | 'Newspaper'
-    | 'Languages' | 'MapPin' | 'Zap' | 'PawPrint' | 'Grid2x2' | 'Radar';
+    | 'Languages' | 'MapPin' | 'Zap' | 'PawPrint' | 'Grid2x2' | 'Radar' | 'Smartphone';
 
 export interface SettingsRowDef {
     id:        string;
@@ -51,6 +51,7 @@ export function getSettingsGroups(): SettingsGroup[] {
                 { id: 'streamer', icon: 'Video',  iconBg: '#5e5ce6', label: t('settings.streamerMode', 'Streamer Mode'),  subtitle: t('settings.streamerModeSub', 'Hide details on stream'), keywords: t('settings.keywords.streamer', 'stream, privacy, hide, twitch') },
                 { id: 'wifi',     icon: 'Wifi',   iconBg: '#0a84ff', label: t('settings.wifi', 'Wi-Fi'),                subtitle: t('settings.wifiSub', 'Join nearby networks'), keywords: t('settings.keywords.wifi', 'wireless, internet, network, wlan') },
                 { id: 'bluetooth', icon: 'Bluetooth', iconBg: '#0a84ff', label: t('settings.bluetooth', 'Bluetooth'),   subtitle: t('settings.bluetoothSub', 'Pair with nearby devices'), keywords: t('settings.keywords.bluetooth', 'pair, headphones, devices') },
+                { id: 'remote',   icon: 'Smartphone', iconBg: '#34c759', label: t('remote.title', 'Phone Remote'), subtitle: t('remote.rowSub', 'Control this phone from your real phone'), keywords: t('remote.keywords', 'qr code, remote, control, touch') },
             ],
         },
         {
