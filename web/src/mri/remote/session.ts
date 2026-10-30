@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { fetchIceConfig } from '@/apps/phone/calls/webrtc';
 import { t } from '@/i18n';
+import { startMirror, stopMirror } from './mirror';
 import { caretToEnd, edit, fieldInfo, hideCursor, home, key, pointer, screenAspect, watchScreen, type PointerPhase } from './inject';
 
 export type RemoteStatus = 'idle' | 'opening' | 'waiting' | 'connecting' | 'connected' | 'failed';
@@ -53,6 +54,7 @@ let channel: RTCDataChannel | null = null;
 let expiryTimer = 0;
 let unwatchScreen: () => void = () => {};
 let phoneOpen = false;
+let live = false;
 
 function set(patch: Partial<RemoteState>) {
     useRemoteStore.setState(patch);
@@ -85,6 +87,10 @@ function pageStrings(): Record<string, string> {
 }
 
 function closePeer() {
+    stopMirror();
+    // The server keeps a connected session alive to serve the mirror's files, so tell it when it ends.
+    if (live) void fetchNui('mri:remote:cancel');
+    live = false;
     channel?.close();
     peer?.close();
     channel = null;
@@ -149,6 +155,7 @@ function attach(dc: RTCDataChannel) {
         reportedField = document.activeElement;
         send({ t: 'hello', aspect: screenAspect(), open: phoneOpen, field: fieldInfo(document.activeElement) });
         unwatchScreen = watchScreen(() => send({ t: 'screen', aspect: screenAspect() }));
+        startMirror(dc);
     };
     dc.onmessage = e => handle(e.data);
     dc.onclose = () => {
@@ -191,6 +198,7 @@ async function answer(offerToken: string, sdp: string) {
         if (peer !== pc || !pc.localDescription) return;
         void fetchNui('mri:remote:answer', { token: offerToken, sdp: pc.localDescription.sdp });
         token = null;
+        live = true;
     } catch {
         closePeer();
         set({ status: 'failed', error: 'p2p' });

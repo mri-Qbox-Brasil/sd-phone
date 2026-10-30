@@ -2,8 +2,8 @@
 
 Usar o celular do jogo pelo celular de verdade, de qualquer pessoa e em qualquer navegador:
 o jogador abre **Ajustes > Controle remoto > Mostrar código**, lê o QR code com a câmera e a
-tela do celular dele vira um touchpad do celular do jogo (tocar, arrastar pra rolar, digitar
-com o teclado do celular, Voltar, Início, pegar e guardar o celular).
+tela do celular do jogo aparece no celular dele, ao vivo, pra usar com o dedo (tocar, arrastar
+pra rolar, digitar com o teclado do celular, Voltar, Início, pegar e guardar o celular).
 
 ## Como funciona
 
@@ -14,13 +14,30 @@ com o teclado do celular, Voltar, Início, pegar e guardar o celular).
    da Cloudflare, se o servidor tiver, o mesmo das chamadas de vídeo).
 3. A página cria a oferta WebRTC e manda por `POST .../offer`. O servidor segura essa
    requisição, entrega a oferta ao jogador (`mri_sdphone:remote:offer`) e devolve a resposta
-   SDP do NUI (`mri_sdphone:remote:answer`). O código morre aí.
+   SDP do NUI (`mri_sdphone:remote:answer`). O código não abre mais a página, só serve os
+   arquivos da tela (abaixo) até a conexão cair.
 4. Dali em diante tudo vai pelo data channel, direto entre os dois aparelhos (P2P). O servidor
-   não vê os toques nem o texto.
+   não vê a tela, os toques nem o texto.
 
 O NUI recria o toque como eventos de ponteiro e mouse na tela do celular (`[data-phone-screen]`),
 rola a lista sob o dedo (com inércia) e aplica o texto no campo focado. Senha sai do jogo só
 como pontos.
+
+## Tela ao vivo
+
+Não é vídeo: o CEF do FiveM não captura a própria tela. O NUI grava o HTML da página com o
+[rrweb](https://github.com/rrweb-io/rrweb) (`web/src/mri/remote/mirror.ts`): uma foto inteira
+ao conectar e, depois, só o que muda, em lotes de 30 ms, picados em pedaços de 16 KB. O
+celular remonta a página num iframe com o replayer do rrweb (`mri/remote/vendor`, MIT) e
+recorta só a tela do celular, cuja posição o NUI manda a cada 200 ms. Transição e animação de
+CSS rodam no próprio celular, então ficam lisas e o texto fica nítido em qualquer tamanho.
+
+O HTML aponta pra `https://cfx-nui-<resource>/...`, que só o jogo abre. A página troca isso
+por `/sd-phone/remote/<token>/f/<resource>/...`, e o servidor entrega o arquivo enquanto
+aquela conexão estiver viva. Só fonte, CSS e imagem, de resource ligado, sem `..`.
+
+A gravação só roda com o celular conectado. Se o celular remoto não der conta (mais de 4 MB
+na fila), os eventos são descartados e vai uma foto inteira nova quando a fila esvazia.
 
 ## Endereço que vai no QR
 
@@ -46,7 +63,10 @@ O proxy `*.users.cfx.re` está desativado pela Cfx (`deprecated-...`), por isso 
   (os mesmos das chamadas de vídeo), passa pelo TURN.
 - A porta do FXServer (TCP, a mesma do jogo) precisa estar aberta pra fora, como já está pra
   conectar.
-- Não espelha a imagem da tela: o jogador olha o monitor e usa o celular como touchpad.
+- Fora do espelho: `<canvas>` e vídeo (câmera, jogos em canvas) e imagem em `blob:`. Aparece
+  o resto da tela, essas áreas ficam vazias.
+- App custom (iframe de outro resource) aparece se o NUI conseguir ler o iframe, como o
+  próprio sd-phone já faz pra aplicar o tema.
 
 ## Arquivos
 
@@ -56,4 +76,5 @@ O proxy `*.users.cfx.re` está desativado pela Cfx (`deprecated-...`), por isso 
 | `mri/server/lanip.js` | adaptadores de rede IPv4 do servidor, pra lista Rede |
 | `mri/client/remote.lua` | callbacks do NUI, monta os endereços do QR |
 | `mri/remote/index.html` | página que abre no celular de verdade |
-| `web/src/mri/remote/` | sessão WebRTC, injeção de toque e texto, página do Ajustes |
+| `web/src/mri/remote/` | sessão WebRTC, gravação da tela, injeção de toque e texto, página do Ajustes |
+| `mri/remote/vendor/` | replayer do rrweb 2.1.7 (MIT) que a página carrega |

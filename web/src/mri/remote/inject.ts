@@ -15,19 +15,19 @@ const CURSOR_IDLE_MS = 1200;
 const INERTIA_MIN = 0.25;
 const INERTIA_DECAY = 0.94;
 
-function screenEl(): HTMLElement | null {
+export function phoneScreen(): HTMLElement | null {
     return document.querySelector('[data-phone-screen]') as HTMLElement | null;
 }
 
 /** Width over height of the phone screen, as laid out right now. */
 export function screenAspect(): number {
-    const el = screenEl();
+    const el = phoneScreen();
     if (!el || !el.offsetHeight) return 440 / 956;
     return el.offsetWidth / el.offsetHeight;
 }
 
 export function watchScreen(onChange: () => void): () => void {
-    const el = screenEl();
+    const el = phoneScreen();
     if (!el || typeof ResizeObserver === 'undefined') return () => {};
     const observer = new ResizeObserver(onChange);
     observer.observe(el);
@@ -41,6 +41,7 @@ function showCursor(x: number, y: number, pressed: boolean) {
     if (!cursor) {
         cursor = document.createElement('div');
         cursor.setAttribute('aria-hidden', 'true');
+        cursor.setAttribute('data-remote-cursor', '');
         Object.assign(cursor.style, {
             position: 'fixed', left: '0', top: '0', width: `${CURSOR_SIZE}px`, height: `${CURSOR_SIZE}px`,
             marginLeft: `${-CURSOR_SIZE / 2}px`, marginTop: `${-CURSOR_SIZE / 2}px`, borderRadius: '50%',
@@ -79,7 +80,7 @@ let press: Press | null = null;
 let inertiaFrame = 0;
 
 function toPage(nx: number, ny: number): { x: number; y: number; scale: number } | null {
-    const el = screenEl();
+    const el = phoneScreen();
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
@@ -114,7 +115,7 @@ function canScroll(el: HTMLElement, dx: number, dy: number): boolean {
 }
 
 function findScroller(from: Element, dx: number, dy: number): HTMLElement | null {
-    const root = screenEl();
+    const root = phoneScreen();
     for (let el: Element | null = from; el && el !== document.body; el = el.parentElement) {
         if (el instanceof HTMLElement && canScroll(el, dx, dy)) return el;
         if (el === root) break;

@@ -18,11 +18,21 @@ local PAGE_FILE <const> = 'mri/remote/index.html'
 ---@type string Marker in the page replaced by the JSON config.
 local PAGE_SLOT <const> = '/*MRI_REMOTE_CONFIG*/null'
 
+---@type string rrweb replayer the page loads to rebuild the phone screen.
+local REPLAY_FILE <const> = 'mri/remote/vendor/rrweb-replay.min.js'
+
+---@type table<string, string> Files a connected phone may fetch from any resource, by extension.
+local FILE_TYPES <const> = {
+    css = 'text/css', png = 'image/png', jpg = 'image/jpeg', jpeg = 'image/jpeg', webp = 'image/webp',
+    gif = 'image/gif', svg = 'image/svg+xml', woff = 'font/woff', woff2 = 'font/woff2', ttf = 'font/ttf', otf = 'font/otf',
+}
+
 ---@class RemoteSession
 ---@field src integer Player the code was minted for.
 ---@field expires integer os.time() after which the code is dead.
 ---@field strings table<string, string> Page texts in the player's phone language.
 ---@field pending table|nil HTTP response held open until the game answers the offer.
+---@field live boolean|nil Answered: the code is spent, but the mirror still fetches files with it.
 
 ---@type table<string, RemoteSession>
 local sessions = {}
@@ -133,7 +143,9 @@ local function servePage(res, token)
     end
 
     local session = token and sessions[token]
-    if session and os.time() > session.expires then
+    if session and session.live then
+        session = nil
+    elseif session and os.time() > session.expires then
         drop(token, 'expired')
         session = nil
     end
@@ -164,7 +176,7 @@ end
 ---@param token string
 local function takeOffer(req, res, token)
     local session = sessions[token]
-    if not session or os.time() > session.expires or session.pending then
+    if not session or session.live or os.time() > session.expires or session.pending then
         if session and os.time() > session.expires then drop(token, 'expired') end
         return replyJson(res, 410, { ok = false, code = 'expired' })
     end
@@ -191,8 +203,52 @@ local function takeOffer(req, res, token)
     end)
 end
 
+---@param res table
+---@param status integer
+---@param contentType string
+---@param body string
+---@param maxAge integer seconds the phone may cache it
+local function replyFile(res, status, contentType, body, maxAge)
+    res.writeHead(status, {
+        ['Content-Type'] = contentType,
+        ['Cache-Control'] = maxAge > 0 and ('private, max-age=%d'):format(maxAge) or 'no-store',
+        ['X-Content-Type-Options'] = 'nosniff',
+    })
+    res.send(body)
+end
+
+---GET /remote/<token>/f/<resource>/<path>: fonts, styles and images the mirrored screen points at.
+---@param res table
+---@param token string
+---@param resource string
+---@param file string
+local function serveFile(res, token, resource, file)
+    local session = sessions[token]
+    local ext = file:match('%.(%w+)$')
+    local contentType = ext and FILE_TYPES[ext:lower()]
+    if not session or not session.live or not contentType or file:find('..', 1, true)
+        or GetResourceState(resource) ~= 'started' then
+        return replyFile(res, 404, 'text/plain', '', 0)
+    end
+    local body = LoadResourceFile(resource, file)
+    if not body then return replyFile(res, 404, 'text/plain', '', 0) end
+    replyFile(res, 200, contentType, body, 3600)
+end
+
 setHttpHandler(function(req, res)
     local path = type(req.path) == 'string' and req.path:gsub('%?.*$', '') or ''
+
+    if req.method == 'GET' and path == '/remote/replay.js' then
+        local body = LoadResourceFile(GetCurrentResourceName(), REPLAY_FILE)
+        return replyFile(res, body and 200 or 404, 'text/javascript; charset=utf-8', body or '', 3600)
+    end
+
+    local fileToken, fileResource, file = path:match('^/remote/(%x+)/f/([%w_%-%.]+)/(.+)$')
+    if fileToken then
+        if req.method ~= 'GET' then return replyJson(res, 405, { ok = false, code = 'method' }) end
+        return serveFile(res, fileToken, fileResource, file)
+    end
+
     local token, action = path:match('^/remote/(%x+)/?(%a*)$')
 
     if not token then
@@ -234,7 +290,7 @@ lib.callback.register('mri_sdphone:remote:open', function(src, strings)
     }
 end)
 
----The game's SDP answer: releases the phone's held offer and retires the code.
+---The game's SDP answer: releases the phone's held offer and spends the code, which lives on only for the mirror's files.
 RegisterNetEvent('mri_sdphone:remote:answer', function(token, sdp)
     local src = source
     local session = type(token) == 'string' and sessions[token]
@@ -243,12 +299,11 @@ RegisterNetEvent('mri_sdphone:remote:answer', function(token, sdp)
 
     local res = session.pending
     session.pending = nil
-    sessions[token] = nil
-    if tokenOf[src] == token then tokenOf[src] = nil end
+    session.live = true
     replyJson(res, 200, { ok = true, sdp = sdp })
 end)
 
----The player closed the code page or cancelled before a phone answered.
+---The player cancelled the code or the connection ended.
 RegisterNetEvent('mri_sdphone:remote:cancel', function()
     local token = tokenOf[source]
     if token then drop(token, 'closed') end
@@ -265,7 +320,7 @@ CreateThread(function()
         Wait(30000)
         local now = os.time()
         for token, session in pairs(sessions) do
-            if now > session.expires and not session.pending then drop(token, 'expired') end
+            if now > session.expires and not session.pending and not session.live then drop(token, 'expired') end
         end
     end
 end)
