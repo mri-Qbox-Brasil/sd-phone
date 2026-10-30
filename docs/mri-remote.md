@@ -24,13 +24,18 @@ como pontos.
 
 ## Endereço que vai no QR
 
-Na ordem:
+Embaixo do QR fica a lista **Rede**, pra o jogador escolher qual endereço vai no código. A
+escolha fica salva pros próximos códigos. A lista, na ordem:
 
 - convar `sd_phone_remote_url` (ex.: `set sd_phone_remote_url "https://celular.minhacidade.com"`),
   pra quem põe um domínio com HTTPS na frente do servidor (proxy reverso pra porta do FXServer).
   O caminho `/sd-phone/remote/<token>` é somado no fim.
-- senão, `http://<ip>:<porta>` que o jogador usou pra conectar (`GetCurrentServerEndpoint`).
-  Jogador no mesmo PC do servidor (127.0.0.1) recebe o IP da rede local da máquina.
+- `http://<ip>:<porta>` que o jogador usou pra conectar (`GetCurrentServerEndpoint`), se não for
+  127.0.0.1.
+- cada adaptador de rede IPv4 da máquina do servidor, com o nome do Windows (Wi-Fi, Ethernet,
+  vEthernet do WSL...) e a porta do jogo. Rede local vem antes, adaptador virtual por último.
+
+Sem escolha salva, vale o primeiro da lista.
 
 O proxy `*.users.cfx.re` está desativado pela Cfx (`deprecated-...`), por isso não é usado.
 
@@ -48,7 +53,7 @@ O proxy `*.users.cfx.re` está desativado pela Cfx (`deprecated-...`), por isso 
 | Arquivo | O quê |
 | --- | --- |
 | `mri/server/remote.lua` | sessões, página, sinalização; põe o `SetHttpHandler` do upstream atrás do dele |
-| `mri/server/lanip.js` | IP da rede local, pro jogador no mesmo PC do servidor |
-| `mri/client/remote.lua` | callbacks do NUI, monta a URL do QR |
+| `mri/server/lanip.js` | adaptadores de rede IPv4 do servidor, pra lista Rede |
+| `mri/client/remote.lua` | callbacks do NUI, monta os endereços do QR |
 | `mri/remote/index.html` | página que abre no celular de verdade |
 | `web/src/mri/remote/` | sessão WebRTC, injeção de toque e texto, página do Ajustes |

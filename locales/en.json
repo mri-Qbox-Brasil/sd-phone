@@ -4999,6 +4999,8 @@
     "volume": "Radio volume"
   },
   "remote": {
+    "addrCustom": "Server site",
+    "addrServer": "Server address",
     "cancel": "Cancel",
     "connected": "Connected",
     "connectedFooter": "Touches and typing on your phone reach this one directly, without passing through the server.",
@@ -5013,6 +5015,8 @@
     "keywords": "qr code, remote, control, touch",
     "makeCode": "Show Code",
     "making": "Making a code…",
+    "network": "Network",
+    "networkFooter": "If the phone does not open the page, pick the network it is connected to.",
     "page": {
       "back": "Back",
       "closed": "The phone is put away",

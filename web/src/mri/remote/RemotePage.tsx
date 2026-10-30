@@ -5,7 +5,7 @@ import { encode } from 'uqr';
 import { t } from '@/i18n';
 import { GroupCard, ListGroup, ListRow } from '@/ui/ListGroup';
 import { SubPage } from '@/apps/settings/SettingsSubPage';
-import { closeRemote, openRemote, useRemoteStore, type RemoteError } from './session';
+import { chooseUrl, closeRemote, openRemote, useRemoteStore, type RemoteError, type RemoteUrl } from './session';
 
 function QrCode({ text }: { text: string }) {
     const path = useMemo(() => {
@@ -22,6 +22,16 @@ function QrCode({ text }: { text: string }) {
     );
 }
 
+function urlLabel(item: RemoteUrl): string {
+    if (item.id === 'custom')   return t('remote.addrCustom', 'Server site');
+    if (item.id === 'endpoint') return t('remote.addrServer', 'Server address');
+    return item.name ?? item.id;
+}
+
+function hostOf(url: string): string {
+    return url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+}
+
 function errorText(error: RemoteError): string {
     switch (error) {
         case 'unavailable': return t('remote.errUnavailable', 'This server has no address a phone can open. Ask the staff to set sd_phone_remote_url.');
@@ -35,7 +45,9 @@ function errorText(error: RemoteError): string {
 export function RemotePage({ onBack }: { onBack: () => void }) {
     const status = useRemoteStore(s => s.status);
     const error  = useRemoteStore(s => s.error);
-    const url    = useRemoteStore(s => s.url);
+    const urls   = useRemoteStore(s => s.urls);
+    const choice = useRemoteStore(s => s.choice);
+    const url    = urls.find(u => u.id === choice)?.url ?? null;
 
     return (
         <SubPage title={t('remote.title', 'Phone Remote')} backLabel={t('settings.settings', 'Settings')} onBack={onBack}>
@@ -69,6 +81,23 @@ export function RemotePage({ onBack }: { onBack: () => void }) {
                         </p>
                         {url && <p className="select-text break-all text-center text-[12px] text-ios-gray">{url}</p>}
                     </GroupCard>
+                    {status === 'waiting' && urls.length > 1 && (
+                        <ListGroup
+                            header={t('remote.network', 'Network')}
+                            footer={t('remote.networkFooter', 'If the phone does not open the page, pick the network it is connected to.')}
+                        >
+                            {urls.map((item, i) => (
+                                <ListRow
+                                    key={item.id}
+                                    label={urlLabel(item)}
+                                    sub={hostOf(item.url)}
+                                    selected={item.id === choice}
+                                    divider={i < urls.length - 1}
+                                    onPress={() => chooseUrl(item.id)}
+                                />
+                            ))}
+                        </ListGroup>
+                    )}
                     <ListGroup>
                         <ListRow label={t('remote.cancel', 'Cancel')} destructive chevron={false} onPress={closeRemote} />
                     </ListGroup>

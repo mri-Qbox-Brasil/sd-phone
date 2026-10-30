@@ -9,18 +9,36 @@ export type RemoteStatus = 'idle' | 'opening' | 'waiting' | 'connecting' | 'conn
 
 export type RemoteError = 'unavailable' | 'cooldown' | 'server' | 'p2p' | 'expired' | null;
 
+export interface RemoteUrl {
+    id:    string;
+    name?: string;
+    url:   string;
+}
+
 interface RemoteState {
     status:    RemoteStatus;
     error:     RemoteError;
-    url:       string | null;
+    urls:      RemoteUrl[];
+    choice:    string | null;
     expiresAt: number;
 }
 
 export const useRemoteStore = create<RemoteState>()(() => ({
-    status: 'idle', error: null, url: null, expiresAt: 0,
+    status: 'idle', error: null, urls: [], choice: null, expiresAt: 0,
 }));
 
 const GATHER_MS = 3500;
+const CHOICE_KEY = 'mri.remote.address';
+
+function savedChoice(): string | null {
+    try { return localStorage.getItem(CHOICE_KEY); } catch { return null; }
+}
+
+/** Picks which address goes in the QR code, remembered for the next code. */
+export function chooseUrl(id: string) {
+    useRemoteStore.setState({ choice: id });
+    try { localStorage.setItem(CHOICE_KEY, id); } catch { /* storage blocked */ }
+}
 
 type Inbound =
     | { t: 'p'; e: PointerPhase; x: number; y: number }
@@ -127,7 +145,7 @@ function attach(dc: RTCDataChannel) {
     channel = dc;
     dc.onopen = () => {
         window.clearTimeout(expiryTimer);
-        set({ status: 'connected', error: null, url: null });
+        set({ status: 'connected', error: null, urls: [] });
         reportedField = document.activeElement;
         send({ t: 'hello', aspect: screenAspect(), open: phoneOpen, field: fieldInfo(document.activeElement) });
         unwatchScreen = watchScreen(() => send({ t: 'screen', aspect: screenAspect() }));
@@ -136,7 +154,7 @@ function attach(dc: RTCDataChannel) {
     dc.onclose = () => {
         if (channel !== dc) return;
         closePeer();
-        set({ status: 'idle', url: null });
+        set({ status: 'idle', urls: [] });
     };
 }
 
@@ -183,8 +201,8 @@ async function answer(offerToken: string, sdp: string) {
 export async function openRemote() {
     if (!isFiveM) return;
     closePeer();
-    set({ status: 'opening', error: null, url: null });
-    const res = await fetchNui<{ success: boolean; code?: string; data?: { token: string; url: string; expiresIn: number } }>(
+    set({ status: 'opening', error: null, urls: [] });
+    const res = await fetchNui<{ success: boolean; code?: string; data?: { token: string; urls: RemoteUrl[]; expiresIn: number } }>(
         'mri:remote:open', { strings: pageStrings() });
     if (!res?.success || !res.data) {
         const code = res?.code === 'unavailable' || res?.code === 'cooldown' ? res.code : 'server';
@@ -193,12 +211,15 @@ export async function openRemote() {
     }
     token = res.data.token;
     const ttl = res.data.expiresIn * 1000;
-    set({ status: 'waiting', url: res.data.url, expiresAt: Date.now() + ttl });
+    const urls = Array.isArray(res.data.urls) ? res.data.urls : [];
+    const saved = savedChoice();
+    const choice = urls.find(u => u.id === saved)?.id ?? urls[0]?.id ?? null;
+    set({ status: 'waiting', urls, choice, expiresAt: Date.now() + ttl });
     window.clearTimeout(expiryTimer);
     expiryTimer = window.setTimeout(() => {
         if (useRemoteStore.getState().status !== 'waiting') return;
         token = null;
-        set({ status: 'failed', error: 'expired', url: null });
+        set({ status: 'failed', error: 'expired', urls: [] });
     }, ttl);
 }
 
@@ -208,7 +229,7 @@ export function closeRemote() {
     if (token) void fetchNui('mri:remote:cancel');
     token = null;
     closePeer();
-    set({ status: 'idle', error: null, url: null });
+    set({ status: 'idle', error: null, urls: [] });
 }
 
 export function installRemote() {

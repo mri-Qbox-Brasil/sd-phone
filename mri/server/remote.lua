@@ -89,10 +89,17 @@ local function publicBase()
     return nil
 end
 
----@return string|nil address this machine's LAN IPv4, for a client connected over loopback
-local function lanAddress()
-    local ok, address = pcall(function() return exports[GetCurrentResourceName()]:mriLanAddress() end)
-    return ok and type(address) == 'string' and address ~= '' and address or nil
+---@return { name: string, address: string }[] adapters this machine's IPv4 addresses, best guess first
+local function lanAddresses()
+    local ok, list = pcall(function() return exports[GetCurrentResourceName()]:mriLanAddresses() end)
+    local out = {}
+    if not ok or type(list) ~= 'table' then return out end
+    for _, item in ipairs(list) do
+        if type(item) == 'table' and type(item.address) == 'string' and item.address:match('^%d+%.%d+%.%d+%.%d+$') then
+            out[#out + 1] = { name = type(item.name) == 'string' and item.name or item.address, address = item.address }
+        end
+    end
+    return out
 end
 
 local ice = nil
@@ -221,7 +228,7 @@ lib.callback.register('mri_sdphone:remote:open', function(src, strings)
             token = token,
             path = '/' .. GetCurrentResourceName() .. '/remote/' .. token,
             base = publicBase(),
-            lan = lanAddress(),
+            lan = lanAddresses(),
             expiresIn = SESSION_TTL,
         },
     }

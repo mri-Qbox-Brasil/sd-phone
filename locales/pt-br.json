@@ -7356,6 +7356,10 @@
     "voicemailTitle": "Correio de Voz"
   },
   "remote": {
+    "addrCustom": "Site do servidor",
+    "addrServer": "Endereço do servidor",
+    "network": "Rede",
+    "networkFooter": "Se o celular não abrir a página, escolha a rede em que ele está conectado.",
     "cancel": "Cancelar",
     "connected": "Conectado",
     "connectedFooter": "O toque e o que você digita no seu celular chegam direto neste, sem passar pelo servidor.",
