@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0f">
 <meta name="robots" content="noindex">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Remote</title>
 <style>
     :root {
@@ -81,6 +84,15 @@
     button svg { width: 22px; height: 22px; }
     button.primary { background: var(--accent); min-height: 44px; padding: 0 18px; font-size: 15px; font-weight: 600; flex-direction: row; }
     button.send { min-height: 44px; padding: 0 16px; flex-direction: row; font-size: 15px; }
+    button.icon { min-height: 36px; width: 36px; padding: 0; border-radius: 10px; flex: none; }
+    button.icon svg { width: 18px; height: 18px; }
+    header .status { margin-left: auto; }
+    .tip {
+        display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 14px;
+        background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted);
+    }
+    .tip span { flex: 1; min-width: 0; }
+    .tip button.primary { min-height: 36px; font-size: 14px; }
     svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
@@ -88,7 +100,18 @@
 <header>
     <h1 id="title"></h1>
     <span class="status" id="status" data-state="idle"><i></i><span id="statusText"></span></span>
+    <button class="icon" id="fullscreen" type="button" hidden>
+        <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
 </header>
+
+<div class="tip" id="tip" hidden>
+    <span id="tipText"></span>
+    <button class="primary" id="installBtn" type="button" hidden></button>
+    <button class="icon" id="tipClose" type="button" aria-label="OK">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+</div>
 
 <main class="stage" id="stage">
     <div class="pad" id="pad">
@@ -137,9 +160,12 @@
     var rect = null;
     var replayer = null;
     var parts = {};
+    var stream = null, canvasId = null, videoEl = null, hiddenCanvas = null;
     var mirror = $('mirror');
     var pagePath = location.pathname.replace(/\/+$/, '');
     var fileBase = location.origin + pagePath + '/f/';
+    var offerPath = config.pair ? config.base + '/app/' + config.pair + '/offer' : pagePath + '/offer';
+    var pc = null, retryTimer = 0;
     var phoneOpen = false;
     var field = { on: false, value: '', kind: 'text' };
     var buffer = '';
@@ -217,9 +243,39 @@
         pad.classList.add('mirrored');
     }
 
+    // A big canvas (camera, games) comes as video: it takes the canvas's place in the rebuilt page.
+    function dropVideo() {
+        if (videoEl) { videoEl.remove(); videoEl = null; }
+        if (hiddenCanvas) { hiddenCanvas.style.removeProperty('display'); hiddenCanvas = null; }
+    }
+
+    function placeVideo() {
+        var node = replayer && canvasId != null && stream ? replayer.getMirror().getNode(canvasId) : null;
+        if (!node || !node.isConnected || !node.parentNode) return dropVideo();
+        if (hiddenCanvas && hiddenCanvas !== node) dropVideo();
+        if (!videoEl || videoEl.ownerDocument !== node.ownerDocument) {
+            dropVideo();
+            videoEl = node.ownerDocument.createElement('video');
+            videoEl.muted = true;
+            videoEl.autoplay = true;
+            videoEl.playsInline = true;
+            videoEl.setAttribute('playsinline', '');
+            videoEl.srcObject = stream;
+        }
+        if (videoEl.previousSibling !== node) node.parentNode.insertBefore(videoEl, node.nextSibling);
+        videoEl.className = node.getAttribute('class') || '';
+        videoEl.style.cssText = node.style.cssText;
+        videoEl.style.removeProperty('display');
+        videoEl.style.objectFit = 'fill';
+        ['width', 'height'].forEach(function (a) { if (node.hasAttribute(a)) videoEl.setAttribute(a, node.getAttribute(a)); });
+        node.style.setProperty('display', 'none', 'important');
+        hiddenCanvas = node;
+        if (videoEl.paused) { var p = videoEl.play(); if (p && p.catch) p.catch(function () {}); }
+    }
+
     function loadReplay() {
         var script = document.createElement('script');
-        script.src = pagePath.replace(/\/[^/]*$/, '/replay.js');
+        script.src = config.base + '/replay.js';
         document.head.appendChild(script);
     }
     window.addEventListener('resize', fit);
@@ -246,17 +302,20 @@
         }
     }
 
-    function finish(state, key) {
+    function finish(state, key, retry) {
         if (ended) return;
         ended = true;
+        if (pc) { pc.close(); pc = null; }
         channel = null;
         setStatus('bad', '');
         setControls(false);
         keys.classList.remove('on');
         pad.classList.remove('mirrored');
+        dropVideo();
+        canvasId = null;
         mirror.textContent = '';
         replayer = null;
-        setHint(state, text(key));
+        setHint(state, text(key), retry && config.pair ? text('reconnect') : null);
     }
 
     function syncField(next) {
@@ -281,6 +340,10 @@
         if (msg.t === 'rr') {
             try { msg = JSON.parse(localUrls(raw)); } catch (e) { return; }
             return playEvents(msg.es || []);
+        }
+        if (msg.t === 'canvas') {
+            canvasId = typeof msg.id === 'number' ? msg.id : null;
+            return placeVideo();
         }
         if (msg.t === 'rect') {
             rect = msg;
@@ -348,7 +411,10 @@
     pad.addEventListener('pointercancel', function (e) { release(e, 'cancel'); });
     pad.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-    hintAction.addEventListener('click', function () { send({ t: 'toggle' }); });
+    hintAction.addEventListener('click', function () {
+        if (ended) return connect();
+        send({ t: 'toggle' });
+    });
     $('toggle').addEventListener('click', function () { send({ t: 'toggle' }); });
     $('back').addEventListener('click', function () { send({ t: 'key', k: 'Escape' }); });
     $('home').addEventListener('click', function () { send({ t: 'home' }); });
@@ -379,14 +445,88 @@
         send({ t: 'key', k: 'Enter' });
     });
 
+    // Home screen app: a paired phone keeps one URL that connects whenever its player is online.
+    var standalone = (window.matchMedia && (matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches)) || navigator.standalone === true;
+    var installPrompt = null;
+    var root = document.documentElement;
+    var canFullscreen = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+
+    function addHeadLink(rel, href) {
+        var old = document.querySelector('link[rel="' + rel + '"]');
+        if (old) old.remove();
+        var link = document.createElement('link');
+        link.rel = rel;
+        link.href = href;
+        document.head.appendChild(link);
+    }
+
+    function becomeApp(pair) {
+        config.pair = pair;
+        offerPath = config.base + '/app/' + pair + '/offer';
+        try { history.replaceState(null, '', config.base + '/app/' + pair); } catch (e) { /* old browser */ }
+        addHeadLink('manifest', config.base + '/app/' + pair + '/manifest.webmanifest');
+        showInstallTip();
+    }
+
+    function showInstallTip() {
+        if (standalone || !config.pair) return;
+        var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        $('installBtn').hidden = !installPrompt;
+        $('tipText').textContent = installPrompt ? '' : text(ios ? 'installIos' : 'installAndroid');
+        $('tip').hidden = !installPrompt && !$('tipText').textContent;
+        requestAnimationFrame(fit);
+    }
+
+    function enterFullscreen() {
+        if (standalone || document.fullscreenElement || document.webkitFullscreenElement) return;
+        var go = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (!go) return;
+        try {
+            var p = go.call(root, { navigationUI: 'hide' });
+            if (p && p.then) p.then(function () {
+                if (screen.orientation && screen.orientation.lock) screen.orientation.lock('portrait').catch(function () {});
+            }).catch(function () {});
+        } catch (e) { /* refused */ }
+    }
+
+    window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        installPrompt = e;
+        showInstallTip();
+    });
+    $('installBtn').textContent = text('install');
+    $('installBtn').addEventListener('click', function () {
+        if (!installPrompt) return;
+        installPrompt.prompt();
+        installPrompt = null;
+        $('tip').hidden = true;
+        requestAnimationFrame(fit);
+    });
+    $('tipClose').addEventListener('click', function () { $('tip').hidden = true; requestAnimationFrame(fit); });
+    $('fullscreen').hidden = standalone || !canFullscreen;
+    $('fullscreen').title = text('fullscreen');
+    $('fullscreen').setAttribute('aria-label', text('fullscreen'));
+    $('fullscreen').addEventListener('click', enterFullscreen);
+    // Android lets a page go full screen only from a tap, so the first touch does it.
+    document.addEventListener('pointerdown', function first() {
+        document.removeEventListener('pointerdown', first, true);
+        enterFullscreen();
+    }, true);
+    document.addEventListener('fullscreenchange', function () { requestAnimationFrame(fit); });
+
+    addHeadLink('apple-touch-icon', config.base + '/icon-180.png');
+    var appTitle = document.createElement('meta');
+    appTitle.name = 'apple-mobile-web-app-title';
+    appTitle.content = text('appName') || text('title');
+    document.head.appendChild(appTitle);
+    if (config.pair) addHeadLink('manifest', config.base + '/app/' + config.pair + '/manifest.webmanifest');
+
     if (config.expired) {
         setStatus('bad', '');
-        setHint('expired', text('expired'));
+        setHint('expired', text(pagePath.indexOf('/app/') >= 0 ? 'forgotten' : 'expired'));
         return;
     }
 
-    setStatus('idle', text('connecting'));
-    setHint('connecting', text('connecting'));
     loadReplay();
 
     function gathered(pc) {
@@ -399,38 +539,81 @@
         });
     }
 
-    var pc = new RTCPeerConnection({ iceServers: config.iceServers || [] });
-    var dc = pc.createDataChannel('remote', { ordered: true });
-    dc.onopen = function () {
-        channel = dc;
-        setStatus('connected', text('connected'));
-        showOpenState();
-    };
-    dc.onmessage = function (e) { onMessage(e.data); };
-    dc.onclose = function () { finish('ended', 'ended'); };
-    pc.onconnectionstatechange = function () {
-        if (pc.connectionState === 'failed') finish('failed', channel ? 'ended' : 'failed');
-    };
+    // rrweb can rebuild the canvas's parent at any time, so keep the video glued to it.
+    setInterval(function () { if (canvasId != null) placeVideo(); }, 250);
 
-    pc.createOffer()
-        .then(function (offer) { return pc.setLocalDescription(offer); })
-        .then(function () { return gathered(pc); })
-        .then(function () {
-            return fetch(location.pathname.replace(/\/+$/, '') + '/offer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sdp: pc.localDescription.sdp }),
-            });
-        })
-        .then(function (res) { return res.json().catch(function () { return { ok: false }; }); })
-        .then(function (body) {
-            if (!body || !body.ok || typeof body.sdp !== 'string') {
-                pc.close();
-                return finish(body && body.code === 'timeout' ? 'failed' : 'expired', body && body.code === 'timeout' ? 'failed' : 'expired');
-            }
-            return pc.setRemoteDescription({ type: 'answer', sdp: body.sdp });
-        })
-        .catch(function () { pc.close(); finish('failed', 'failed'); });
+    /** The player is not on the server: wait and try again, so the app connects as soon as they join. */
+    function waitOnline() {
+        ended = true;
+        pc = null;
+        setStatus('bad', '');
+        setControls(false);
+        setHint('offline', text('offline'), text('reconnect'));
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, 5000);
+    }
+
+    function connect() {
+        clearTimeout(retryTimer);
+        if (pc) pc.close();
+        ended = false;
+        setStatus('idle', text('connecting'));
+        setHint('connecting', text('connecting'));
+
+        var conn = new RTCPeerConnection({ iceServers: config.iceServers || [] });
+        pc = conn;
+        var dc = conn.createDataChannel('remote', { ordered: true });
+        conn.addTransceiver('video', { direction: 'recvonly' });
+        conn.ontrack = function (e) {
+            stream = (e.streams && e.streams[0]) || new MediaStream([e.track]);
+            placeVideo();
+        };
+        dc.onopen = function () {
+            if (pc !== conn) return;
+            channel = dc;
+            setStatus('connected', text('connected'));
+            showOpenState();
+        };
+        dc.onmessage = function (e) { if (pc === conn) onMessage(e.data); };
+        dc.onclose = function () { if (pc === conn) finish('ended', 'ended', true); };
+        conn.onconnectionstatechange = function () {
+            if (pc === conn && conn.connectionState === 'failed') finish('failed', channel ? 'ended' : 'failed', true);
+        };
+
+        conn.createOffer()
+            .then(function (offer) { return conn.setLocalDescription(offer); })
+            .then(function () { return gathered(conn); })
+            .then(function () {
+                return fetch(offerPath, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sdp: conn.localDescription.sdp }),
+                });
+            })
+            .then(function (res) { return res.json().catch(function () { return { ok: false }; }); })
+            .then(function (body) {
+                if (pc !== conn) return;
+                if (!body || !body.ok || typeof body.sdp !== 'string') {
+                    var code = body && body.code;
+                    if (config.pair && (code === 'offline' || code === 'cooldown')) { conn.close(); return waitOnline(); }
+                    if (code === 'forgotten') return finish('expired', 'forgotten');
+                    if (code === 'timeout') return finish('failed', 'failed', true);
+                    return finish('expired', 'expired', true);
+                }
+                if (typeof body.files === 'string') fileBase = location.origin + body.files;
+                if (body.pair && !config.pair) becomeApp(body.pair);
+                return conn.setRemoteDescription({ type: 'answer', sdp: body.sdp });
+            })
+            .catch(function () { if (pc === conn) finish('failed', 'failed', true); });
+    }
+
+    // Back to the app after the phone slept: reconnect if the link dropped meanwhile.
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && ended && config.pair) connect();
+    });
+
+    connect();
+    showInstallTip();
 })();
 </script>
 </body>

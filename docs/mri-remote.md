@@ -34,10 +34,33 @@ CSS rodam no próprio celular, então ficam lisas e o texto fica nítido em qual
 
 O HTML aponta pra `https://cfx-nui-<resource>/...`, que só o jogo abre. A página troca isso
 por `/sd-phone/remote/<token>/f/<resource>/...`, e o servidor entrega o arquivo enquanto
-aquela conexão estiver viva. Só fonte, CSS e imagem, de resource ligado, sem `..`.
+aquela conexão estiver viva. Só fonte, CSS e imagem, de resource ligado, sem `..`. O navegador
+passa o host pra minúsculo (`cfx-nui-mri_qwhatzapp`), então o servidor acha o resource sem
+diferenciar maiúscula.
+
+Canvas grande (câmera, jogo em canvas) não entra no HTML: vai como vídeo de verdade. A página
+já abre a conexão com um canal de vídeo só de recepção; o NUI pega o maior canvas visível na
+tela do celular (15% da tela ou mais), manda com `captureStream` a 24 quadros por segundo e diz
+qual nó do rrweb ele é. A página põe um `<video>` no lugar desse canvas, com as mesmas classes
+e estilo, então os botões por cima (o disparador da câmera) continuam por cima.
 
 A gravação só roda com o celular conectado. Se o celular remoto não der conta (mais de 4 MB
 na fila), os eventos são descartados e vai uma foto inteira nova quando a fila esvazia.
+
+## App na tela de início
+
+Ao conectar pelo QR, o servidor salva aquele celular (chave de 128 bits ligada à license do
+jogador, no KVP do resource, até 5 por jogador) e a página troca a própria URL por
+`/sd-phone/remote/app/<chave>`, com manifest (`display: fullscreen`) e ícone. É esse endereço
+que vai pra tela de início. Aberto de lá, ele manda a oferta pra `.../app/<chave>/offer`: se o
+dono estiver no servidor, chega no celular do jogo dele e conecta sem QR; se não, a página
+mostra que está esperando e tenta de novo a cada 5 segundos. **Ajustes > Controle remoto >
+Esquecer celulares salvos** apaga todas as chaves do jogador.
+
+Tela cheia: no iPhone, o app da tela de início abre sem a barra do Safari. No Android, a página
+pede tela cheia no primeiro toque e tem o botão no topo. O "Instalar app" do Chrome só aparece
+em HTTPS (`sd_phone_remote_url`); em `http://` o caminho é o menu do navegador, e a página
+mostra a dica.
 
 ## Endereço que vai no QR
 
@@ -63,10 +86,10 @@ O proxy `*.users.cfx.re` está desativado pela Cfx (`deprecated-...`), por isso 
   (os mesmos das chamadas de vídeo), passa pelo TURN.
 - A porta do FXServer (TCP, a mesma do jogo) precisa estar aberta pra fora, como já está pra
   conectar.
-- Fora do espelho: `<canvas>` e vídeo (câmera, jogos em canvas) e imagem em `blob:`. Aparece
-  o resto da tela, essas áreas ficam vazias.
-- App custom (iframe de outro resource) aparece se o NUI conseguir ler o iframe, como o
-  próprio sd-phone já faz pra aplicar o tema.
+- Vai como vídeo só um canvas por vez (o maior). Canvas pequeno, canvas dentro de app custom,
+  `<video>` e imagem em `blob:` ficam vazios no espelho.
+- A chave do app é como uma senha: quem tiver a URL controla o celular do jogo enquanto o dono
+  estiver online. Celular perdido: Esquecer celulares salvos.
 
 ## Arquivos
 
@@ -78,3 +101,4 @@ O proxy `*.users.cfx.re` está desativado pela Cfx (`deprecated-...`), por isso 
 | `mri/remote/index.html` | página que abre no celular de verdade |
 | `web/src/mri/remote/` | sessão WebRTC, gravação da tela, injeção de toque e texto, página do Ajustes |
 | `mri/remote/vendor/` | replayer do rrweb 2.1.7 (MIT) que a página carrega |
+| `mri/remote/icons/` | ícones do app (180, 192 e 512) |

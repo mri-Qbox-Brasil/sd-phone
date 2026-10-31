@@ -55,6 +55,7 @@ let expiryTimer = 0;
 let unwatchScreen: () => void = () => {};
 let phoneOpen = false;
 let live = false;
+let videoSender: RTCRtpSender | null = null;
 
 function set(patch: Partial<RemoteState>) {
     useRemoteStore.setState(patch);
@@ -83,6 +84,14 @@ function pageStrings(): Record<string, string> {
         ended:      t('remote.page.ended', 'Disconnected. Scan a new code in Settings to connect again.'),
         expired:    t('remote.page.expired', 'This code has expired. Open Settings on the phone in the game and scan a new one.'),
         failed:     t('remote.page.failed', 'Could not connect directly to the game. Try with both on the same Wi-Fi network.'),
+        appName:    t('remote.page.appName', 'Phone'),
+        offline:    t('remote.page.offline', 'Join the server and this app connects on its own.'),
+        reconnect:  t('remote.page.reconnect', 'Connect again'),
+        forgotten:  t('remote.page.forgotten', 'This phone was forgotten. Scan a new code in Settings on the phone in the game.'),
+        install:    t('remote.page.install', 'Install app'),
+        installIos: t('remote.page.installIos', 'To make it an app: tap Share, then Add to Home Screen.'),
+        installAndroid: t('remote.page.installAndroid', 'To make it an app: open the browser menu and tap Add to Home screen.'),
+        fullscreen: t('remote.page.fullscreen', 'Full screen'),
     };
 }
 
@@ -155,7 +164,7 @@ function attach(dc: RTCDataChannel) {
         reportedField = document.activeElement;
         send({ t: 'hello', aspect: screenAspect(), open: phoneOpen, field: fieldInfo(document.activeElement) });
         unwatchScreen = watchScreen(() => send({ t: 'screen', aspect: screenAspect() }));
-        startMirror(dc);
+        startMirror(dc, videoSender);
     };
     dc.onmessage = e => handle(e.data);
     dc.onclose = () => {
@@ -175,9 +184,16 @@ function waitForCandidates(pc: RTCPeerConnection): Promise<void> {
     });
 }
 
-async function answer(offerToken: string, sdp: string) {
-    if (offerToken !== token || useRemoteStore.getState().status !== 'waiting') return;
-    set({ status: 'connecting' });
+async function answer(offerToken: string, sdp: string, paired: boolean) {
+    if (paired) {
+        // A paired phone opening its app: the server already swapped sessions, so no cancel goes out.
+        window.clearTimeout(expiryTimer);
+        token = offerToken;
+        live = false;
+    } else if (offerToken !== token || useRemoteStore.getState().status !== 'waiting') {
+        return;
+    }
+    set({ status: 'connecting', urls: [] });
 
     closePeer();
     const pc = new RTCPeerConnection(await fetchIceConfig());
@@ -193,6 +209,10 @@ async function answer(offerToken: string, sdp: string) {
 
     try {
         await pc.setRemoteDescription({ type: 'offer', sdp });
+        // The remote offers a receive-only video slot; a canvas on screen gets sent through it.
+        const video = pc.getTransceivers().find(tr => tr.receiver.track.kind === 'video');
+        if (video) video.direction = 'sendonly';
+        videoSender = video?.sender ?? null;
         await pc.setLocalDescription(await pc.createAnswer());
         await waitForCandidates(pc);
         if (peer !== pc || !pc.localDescription) return;
@@ -231,6 +251,16 @@ export async function openRemote() {
     }, ttl);
 }
 
+/** Forgets every phone saved as an app, and drops the one connected now. */
+export function forgetPhones() {
+    window.clearTimeout(expiryTimer);
+    token = null;
+    live = false;
+    closePeer();
+    set({ status: 'idle', error: null, urls: [] });
+    void fetchNui('mri:remote:forget');
+}
+
 /** Drops the connection, or the code still waiting for a phone. */
 export function closeRemote() {
     window.clearTimeout(expiryTimer);
@@ -242,9 +272,9 @@ export function closeRemote() {
 
 export function installRemote() {
     window.addEventListener('message', (event: MessageEvent) => {
-        const msg = event.data as { action?: string; data?: { token?: string; sdp?: string } } | undefined;
+        const msg = event.data as { action?: string; data?: { token?: string; sdp?: string; paired?: boolean } } | undefined;
         if (msg?.action === 'mri:remote:offer' && typeof msg.data?.token === 'string' && typeof msg.data.sdp === 'string') {
-            void answer(msg.data.token, msg.data.sdp);
+            void answer(msg.data.token, msg.data.sdp, msg.data.paired === true);
         } else if (msg?.action === 'sd-phone:open') {
             phoneOpen = true;
             send({ t: 'open', open: true });

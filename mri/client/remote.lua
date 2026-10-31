@@ -67,6 +67,11 @@ RegisterNUICallback('mri:remote:toggle', function(_, cb)
     cb({ success = true })
 end)
 
-RegisterNetEvent('mri_sdphone:remote:offer', function(token, sdp)
-    SendNUIMessage({ action = 'mri:remote:offer', data = { token = token, sdp = sdp } })
+RegisterNUICallback('mri:remote:forget', function(_, cb)
+    TriggerServerEvent('mri_sdphone:remote:forget')
+    cb({ success = true })
+end)
+
+RegisterNetEvent('mri_sdphone:remote:offer', function(token, sdp, paired)
+    SendNUIMessage({ action = 'mri:remote:offer', data = { token = token, sdp = sdp, paired = paired == true } })
 end)

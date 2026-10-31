@@ -7,6 +7,10 @@ const RECT_MS = 200;
 const PART_CHARS = 16000;
 // Past this the phone is not keeping up, so drop events and resend a full snapshot once it drains.
 const BACKLOG_BYTES = 4 * 1024 * 1024;
+const VIDEO_FPS = 24;
+const VIDEO_BITRATE = 2_500_000;
+// A canvas this share of the phone screen or bigger (camera viewfinder, games) goes out as video.
+const VIDEO_MIN_AREA = 0.15;
 
 type Send = (raw: string) => void;
 
@@ -18,6 +22,9 @@ let rectTimer = 0;
 let lastRect = '';
 let behind = false;
 let partId = 0;
+let videoSender: RTCRtpSender | null = null;
+let videoCanvas: HTMLCanvasElement | null = null;
+let videoTrack: MediaStreamTrack | null = null;
 
 function sendRaw(raw: string) {
     if (!channel || channel.readyState !== 'open') return;
@@ -54,10 +61,52 @@ function sendRect(send: Send) {
     send(JSON.stringify({ t: 'rect', ...rect }));
 }
 
-/** Streams the phone's DOM to the remote, which rebuilds it live. */
-export function startMirror(dc: RTCDataChannel) {
+/** The biggest canvas showing on the phone screen, if it is big enough to be worth a video. */
+function liveCanvas(): HTMLCanvasElement | null {
+    const screen = phoneScreen();
+    if (!screen) return null;
+    const box = screen.getBoundingClientRect();
+    let best: HTMLCanvasElement | null = null;
+    let bestArea = box.width * box.height * VIDEO_MIN_AREA;
+    screen.querySelectorAll('canvas').forEach(canvas => {
+        const r = canvas.getBoundingClientRect();
+        const w = Math.min(r.right, box.right) - Math.max(r.left, box.left);
+        const h = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
+        if (w <= 0 || h <= 0 || getComputedStyle(canvas).visibility === 'hidden') return;
+        if (w * h > bestArea) { best = canvas; bestArea = w * h; }
+    });
+    return best;
+}
+
+function syncVideo(send: Send) {
+    if (!videoSender) return;
+    const canvas = liveCanvas();
+    if (canvas === videoCanvas) return;
+    videoTrack?.stop();
+    videoTrack = null;
+    const id = canvas ? record.mirror.getId(canvas) : -1;
+    // Not serialized yet: try again next tick.
+    videoCanvas = canvas && id <= 0 ? null : canvas;
+    if (canvas && id > 0) {
+        try { videoTrack = canvas.captureStream(VIDEO_FPS).getVideoTracks()[0] ?? null; } catch { videoTrack = null; }
+    }
+    void videoSender.replaceTrack(videoTrack).catch(() => {});
+    send(JSON.stringify({ t: 'canvas', id: videoTrack ? id : null }));
+}
+
+/** Streams the phone's DOM to the remote, which rebuilds it live; a big canvas rides the video track. */
+export function startMirror(dc: RTCDataChannel, sender: RTCRtpSender | null) {
     stopMirror();
     channel = dc;
+    videoSender = sender;
+    if (sender) {
+        const params = sender.getParameters();
+        if (params.encodings?.[0]) {
+            params.encodings[0].maxBitrate = VIDEO_BITRATE;
+            params.encodings[0].maxFramerate = VIDEO_FPS;
+            void sender.setParameters(params).catch(() => {});
+        }
+    }
     lastRect = '';
     behind = false;
 
@@ -76,9 +125,12 @@ export function startMirror(dc: RTCDataChannel) {
 
     rectTimer = window.setInterval(() => {
         sendRect(sendRaw);
+        syncVideo(sendRaw);
         if (behind && channel && channel.bufferedAmount < BACKLOG_BYTES / 4) {
             behind = false;
             record.takeFullSnapshot(true);
+            // Node ids are renumbered by the new snapshot.
+            videoCanvas = null;
         }
     }, RECT_MS);
     sendRect(sendRaw);
@@ -92,4 +144,8 @@ export function stopMirror() {
     flushTimer = rectTimer = 0;
     queue = [];
     channel = null;
+    videoTrack?.stop();
+    videoTrack = null;
+    videoCanvas = null;
+    videoSender = null;
 }

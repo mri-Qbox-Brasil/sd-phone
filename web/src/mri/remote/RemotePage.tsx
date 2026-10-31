@@ -5,7 +5,7 @@ import { encode } from 'uqr';
 import { t } from '@/i18n';
 import { GroupCard, ListGroup, ListRow } from '@/ui/ListGroup';
 import { SubPage } from '@/apps/settings/SettingsSubPage';
-import { chooseUrl, closeRemote, openRemote, useRemoteStore, type RemoteError, type RemoteUrl } from './session';
+import { chooseUrl, closeRemote, forgetPhones, openRemote, useRemoteStore, type RemoteError, type RemoteUrl } from './session';
 
 function QrCode({ text }: { text: string }) {
     const path = useMemo(() => {
@@ -113,6 +113,16 @@ export function RemotePage({ onBack }: { onBack: () => void }) {
                         chevron={false}
                         disabled={status === 'opening'}
                         onPress={() => void openRemote()}
+                    />
+                </ListGroup>
+            )}
+            {status !== 'waiting' && status !== 'connecting' && (
+                <ListGroup footer={t('remote.appFooter', 'A phone that connected once can be added to its home screen: the app connects on its own whenever you are on the server.')}>
+                    <ListRow
+                        label={t('remote.forget', 'Forget Saved Phones')}
+                        destructive
+                        chevron={false}
+                        onPress={forgetPhones}
                     />
                 </ListGroup>
             )}
