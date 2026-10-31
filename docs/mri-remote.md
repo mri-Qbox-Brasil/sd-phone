@@ -54,7 +54,8 @@ jogador, no KVP do resource, até 5 por jogador) e a página troca a própria UR
 `/sd-phone/remote/app/<chave>`, com manifest (`display: fullscreen`) e ícone. É esse endereço
 que vai pra tela de início. Aberto de lá, ele manda a oferta pra `.../app/<chave>/offer`: se o
 dono estiver no servidor, chega no celular do jogo dele e conecta sem QR; se não, a página
-mostra que está esperando e tenta de novo a cada 5 segundos. **Ajustes > Controle remoto >
+mostra que está esperando e tenta de novo a cada 5 segundos. A cada conexão o jogo manda os
+textos no idioma atual do celular, e a chave guarda esses textos pra próxima abertura. **Ajustes > Controle remoto >
 Esquecer celulares salvos** apaga todas as chaves do jogador.
 
 Tela cheia: no iPhone, o app da tela de início abre sem a barra do Safari. No Android, a página

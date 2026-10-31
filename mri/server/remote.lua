@@ -470,11 +470,20 @@ lib.callback.register('mri_sdphone:remote:open', function(src, strings)
 end)
 
 ---The game's SDP answer: releases the phone's held offer and spends the code, which lives on only for the mirror's files.
-RegisterNetEvent('mri_sdphone:remote:answer', function(token, sdp)
+RegisterNetEvent('mri_sdphone:remote:answer', function(token, sdp, strings)
     local src = source
     local session = type(token) == 'string' and sessions[token]
     if not session or session.src ~= src or not session.pending then return end
     if type(sdp) ~= 'string' or sdp == '' or #sdp > MAX_SDP then return end
+
+    local fresh = cleanStrings(strings)
+    if next(fresh) then
+        session.strings = fresh
+        lastStrings = fresh
+        local info = session.pair and pairInfo(session.pair)
+        -- A saved app keeps the texts of its pairing, so refresh them to the phone's current language.
+        if info then SetResourceKvp(PAIR_KVP .. session.pair, json.encode({ l = info.l, s = fresh })) end
+    end
 
     local res = session.pending
     session.pending = nil
@@ -485,6 +494,7 @@ RegisterNetEvent('mri_sdphone:remote:answer', function(token, sdp)
         sdp = sdp,
         files = ('/%s/remote/%s/f/'):format(GetCurrentResourceName(), token),
         pair = session.pair,
+        strings = session.strings,
     })
 end)
 

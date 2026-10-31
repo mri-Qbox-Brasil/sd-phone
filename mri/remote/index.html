@@ -175,13 +175,24 @@
 
     function label(id, key) { $(id).querySelector('span').textContent = text(key); }
 
-    document.title = text('title') || document.title;
-    $('title').textContent = text('title');
-    label('back', 'back');
-    label('home', 'home');
-    label('keyboard', 'keyboard');
-    $('send').textContent = text('send');
-    typing.placeholder = text('typeHere');
+    var appTitle = document.createElement('meta');
+    appTitle.name = 'apple-mobile-web-app-title';
+    document.head.appendChild(appTitle);
+
+    function applyTexts() {
+        document.title = text('title') || document.title;
+        $('title').textContent = text('title');
+        label('back', 'back');
+        label('home', 'home');
+        label('keyboard', 'keyboard');
+        $('send').textContent = text('send');
+        typing.placeholder = text(field.on ? 'typeHere' : 'noField');
+        $('installBtn').textContent = text('install');
+        $('fullscreen').title = text('fullscreen');
+        $('fullscreen').setAttribute('aria-label', text('fullscreen'));
+        appTitle.content = text('appName') || text('title');
+    }
+    applyTexts();
 
     function setStatus(state, message) {
         $('status').dataset.state = state;
@@ -494,7 +505,6 @@
         installPrompt = e;
         showInstallTip();
     });
-    $('installBtn').textContent = text('install');
     $('installBtn').addEventListener('click', function () {
         if (!installPrompt) return;
         installPrompt.prompt();
@@ -504,8 +514,6 @@
     });
     $('tipClose').addEventListener('click', function () { $('tip').hidden = true; requestAnimationFrame(fit); });
     $('fullscreen').hidden = standalone || !canFullscreen;
-    $('fullscreen').title = text('fullscreen');
-    $('fullscreen').setAttribute('aria-label', text('fullscreen'));
     $('fullscreen').addEventListener('click', enterFullscreen);
     // Android lets a page go full screen only from a tap, so the first touch does it.
     document.addEventListener('pointerdown', function first() {
@@ -515,10 +523,6 @@
     document.addEventListener('fullscreenchange', function () { requestAnimationFrame(fit); });
 
     addHeadLink('apple-touch-icon', config.base + '/icon-180.png');
-    var appTitle = document.createElement('meta');
-    appTitle.name = 'apple-mobile-web-app-title';
-    appTitle.content = text('appName') || text('title');
-    document.head.appendChild(appTitle);
     if (config.pair) addHeadLink('manifest', config.base + '/app/' + config.pair + '/manifest.webmanifest');
 
     if (config.expired) {
@@ -600,6 +604,8 @@
                     if (code === 'timeout') return finish('failed', 'failed', true);
                     return finish('expired', 'expired', true);
                 }
+                // The game sends its current language, so a saved app follows a language change.
+                if (body.strings && typeof body.strings === 'object') { S = body.strings; applyTexts(); }
                 if (typeof body.files === 'string') fileBase = location.origin + body.files;
                 if (body.pair && !config.pair) becomeApp(body.pair);
                 return conn.setRemoteDescription({ type: 'answer', sdp: body.sdp });

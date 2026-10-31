@@ -216,7 +216,7 @@ async function answer(offerToken: string, sdp: string, paired: boolean) {
         await pc.setLocalDescription(await pc.createAnswer());
         await waitForCandidates(pc);
         if (peer !== pc || !pc.localDescription) return;
-        void fetchNui('mri:remote:answer', { token: offerToken, sdp: pc.localDescription.sdp });
+        void fetchNui('mri:remote:answer', { token: offerToken, sdp: pc.localDescription.sdp, strings: pageStrings() });
         token = null;
         live = true;
     } catch {

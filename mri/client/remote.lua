@@ -47,7 +47,7 @@ end)
 
 RegisterNUICallback('mri:remote:answer', function(body, cb)
     if type(body) == 'table' and type(body.token) == 'string' and type(body.sdp) == 'string' then
-        TriggerServerEvent('mri_sdphone:remote:answer', body.token, body.sdp)
+        TriggerServerEvent('mri_sdphone:remote:answer', body.token, body.sdp, body.strings)
     end
     cb({ success = true })
 end)
