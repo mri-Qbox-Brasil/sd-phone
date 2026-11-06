@@ -222,15 +222,16 @@ end
 ---@param source number
 ---@param target number recipient server id (client-supplied, coerced + range-checked in share.request)
 ---@param payload table contact fields { name, phone, email, address, avatar }
+---@param opts? { pocketed?: boolean } server-side callers only; see share.request
 ---@return table
-function actions.requestShare(source, target, payload)
+function actions.requestShare(source, target, payload, opts)
     local cid = player.getIdentifier(source)
     if not cid then return fail('contacts.playerNotFound', 'Player not found') end
 
     local fields, refusal = validate(cid, payload)
     if not fields then return refusal end
 
-    local okSent, refusal = share.request(source, target, 'contact', fields)
+    local okSent, refusal = share.request(source, target, 'contact', fields, opts)
     if not okSent then return refusal or fail('contacts.couldNotSendRequest', 'Could not send request') end
     return ok()
 end

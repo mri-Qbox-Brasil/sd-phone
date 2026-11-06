@@ -13,6 +13,11 @@ store.newId = newId
 ---@type string
 local PEPPER = 'sd-phone-v1::mail::do-not-leak-this-string'
 
+---@type integer System mails held per identity while it has no mailbox; the oldest go first.
+local PENDING_CAP = 25
+---@type integer Seconds a held mail waits for a mailbox before it is dropped.
+local PENDING_TTL = 14 * 24 * 3600
+
 ---Hashes a password into a stable, deterministic 24-character hex digest.
 ---@param password string
 ---@return string 24-char hex digest
@@ -210,6 +215,18 @@ function store.ensureSchema()
     if (tonumber(declinedPresent) or 0) == 0 then
         MySQL.query.await('ALTER TABLE phone_mail_saved_emails ADD COLUMN declined TINYINT(1) NOT NULL DEFAULT 0')
     end
+
+    MySQL.query.await([[
+        CREATE TABLE IF NOT EXISTS phone_mail_pending (
+            id         BIGINT      NOT NULL AUTO_INCREMENT,
+            citizenid  VARCHAR(64) NOT NULL,
+            mail       LONGTEXT    NOT NULL,
+            created_at INT         NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_phone_mail_pending_cid (citizenid, id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ]])
+    MySQL.update.await('DELETE FROM phone_mail_pending WHERE created_at < ?', { os.time() - PENDING_TTL })
 
     -- Last, after every CREATE TABLE above: this is the only step here that reads player data, so
     -- a throw inside it must not cost the tables below it.
@@ -492,6 +509,40 @@ end
 ---@param email string
 function store.removeSavedEmail(citizenid, email)
     MySQL.update.await('DELETE FROM phone_mail_saved_emails WHERE citizenid = ? AND email = ?', { citizenid, email })
+end
+
+---Holds one system mail for an identity with no mailbox yet, keeping only the newest PENDING_CAP.
+---@param citizenid string
+---@param mail table systemSend payload, minus `to`
+function store.queuePending(citizenid, mail)
+    MySQL.insert.await('INSERT INTO phone_mail_pending (citizenid, mail, created_at) VALUES (?, ?, ?)',
+        { citizenid, json.encode(mail), os.time() })
+    MySQL.update.await([[
+        DELETE FROM phone_mail_pending WHERE citizenid = ? AND id NOT IN (
+            SELECT id FROM (
+                SELECT id FROM phone_mail_pending WHERE citizenid = ? ORDER BY id DESC LIMIT ?
+            ) newest
+        )
+    ]], { citizenid, citizenid, PENDING_CAP })
+end
+
+---Removes and returns every unexpired mail held for an identity, oldest first.
+---@param citizenid string
+---@return table[] mails systemSend payloads, minus `to`
+function store.takePending(citizenid)
+    local rows = MySQL.query.await(
+        'SELECT id, mail FROM phone_mail_pending WHERE citizenid = ? AND created_at >= ? ORDER BY id ASC',
+        { citizenid, os.time() - PENDING_TTL }) or {}
+    if #rows == 0 then return {} end
+    MySQL.update.await('DELETE FROM phone_mail_pending WHERE citizenid = ? AND id <= ?',
+        { citizenid, rows[#rows].id })
+
+    local out = {}
+    for i = 1, #rows do
+        local mail = decodeJson(rows[i].mail)
+        if next(mail) then out[#out + 1] = mail end
+    end
+    return out
 end
 
 return store

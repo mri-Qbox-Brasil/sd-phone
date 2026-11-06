@@ -8,6 +8,8 @@ import { DeckActiveProvider } from './deckActive';
 import { CustomAppFrame } from './CustomAppFrame';
 import { getCustomApp } from '@/stores/customAppsStore';
 import { useFoldOpen } from '@/stores/foldStore';
+import { useLocaleStore } from '@/stores/localeStore';
+import { QuietEntryContext } from '@/hooks/useIosPush';
 import { SPLIT_EXIT_MS, useSplitClosing, useSplitId, useSplitSide, useSplitStore } from '@/stores/splitStore';
 import type { AppDef } from '@/core/types';
 import { ArrowLeftRight } from 'lucide-react';
@@ -97,6 +99,8 @@ interface AppHostProps {
 
 const AppHost = memo(function AppHost({ id, ctx, active, openKey, origin, expandOpen, closing, onCloseDone }: AppHostProps) {
     const node = useMemo(() => buildAppNode(id, ctx), [id, ctx]);
+    const locale    = useLocaleStore(s => s.locale);
+    const changedAt = useLocaleStore(s => s.changedAt);
     // Starts 'open' on mount (an app only ever mounts while it is being foregrounded
     // fullscreen), replays 'open' on each subsequent foreground (openKey bump), and
     // plays 'close' when the active app is collapsing to home.
@@ -143,7 +147,9 @@ const AppHost = memo(function AppHost({ id, ctx, active, openKey, origin, expand
             }}
         >
             <DeckActiveProvider value={active}>
-                <Suspense fallback={<div className="absolute inset-0 bg-base" />}>{node}</Suspense>
+                <QuietEntryContext.Provider value={changedAt}>
+                    <Suspense key={locale} fallback={<div className="absolute inset-0 bg-base" />}>{node}</Suspense>
+                </QuietEntryContext.Provider>
             </DeckActiveProvider>
         </div>
     );

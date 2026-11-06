@@ -1,10 +1,9 @@
 import { useCallback, useState } from 'react';
 import { Clock, UserSearch, VolumeX } from 'lucide-react';
-import clsx from 'clsx';
 
 import { adminMute, adminMutes, adminUnmute } from '../adminApi';
 import { fmtTime, MUTE_SCOPES, scopeLabel, type AdminMute } from '../types';
-import { Badge, Btn, Card, CenterNote, Input, LoadMore, OnlineDot, Spinner } from '../ui';
+import { Badge, Btn, Card, CenterNote, Input, LoadMore, OnlineDot, Spinner, Toggle } from '../ui';
 import { usePaged } from '../usePaged';
 
 const DURATIONS: { label: string; secs: number | null }[] = [
@@ -57,7 +56,7 @@ export function MuteForm({ cid, onDone, toast }: {
         <div className="space-y-3">
             <div>
                 <div className="mb-1.5 flex items-center justify-between">
-                    <div className="text-[11.5px] font-semibold uppercase tracking-wide text-zinc-500">Scopes</div>
+                    <div className="text-[11.5px] font-semibold text-adm-3">Scopes</div>
                     <div className="flex gap-1.5">
                         <Btn variant="subtle" onClick={() => setAll(social)}>All social</Btn>
                         <Btn variant="subtle" onClick={() => setAll(all)}>Everything</Btn>
@@ -65,40 +64,20 @@ export function MuteForm({ cid, onDone, toast }: {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                     {MUTE_SCOPES.map(s => (
-                        <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => toggle(s.id)}
-                            className={clsx(
-                                'rounded-lg px-2.5 py-1.5 text-[12px] font-semibold ring-1 transition-colors',
-                                scopes.has(s.id)
-                                    ? 'bg-ios-blue/20 text-[#6db4ff] ring-ios-blue/50'
-                                    : 'bg-white/[0.05] text-zinc-400 ring-white/[0.08] hover:bg-white/[0.1]',
-                            )}
-                        >
+                        <Toggle key={s.id} on={scopes.has(s.id)} onClick={() => toggle(s.id)}>
                             {s.label}
-                        </button>
+                        </Toggle>
                     ))}
                 </div>
             </div>
 
             <div>
-                <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-zinc-500">Duration</div>
+                <div className="mb-1.5 text-[11.5px] font-semibold text-adm-3">Duration</div>
                 <div className="flex flex-wrap gap-1.5">
                     {DURATIONS.map(d => (
-                        <button
-                            key={d.label}
-                            type="button"
-                            onClick={() => setDuration(d.secs)}
-                            className={clsx(
-                                'rounded-lg px-2.5 py-1.5 text-[12px] font-semibold ring-1 transition-colors',
-                                duration === d.secs
-                                    ? 'bg-ios-orange/20 text-ios-orange ring-ios-orange/50'
-                                    : 'bg-white/[0.05] text-zinc-400 ring-white/[0.08] hover:bg-white/[0.1]',
-                            )}
-                        >
+                        <Toggle key={d.label} on={duration === d.secs} onClick={() => setDuration(d.secs)}>
                             {d.label}
-                        </button>
+                        </Toggle>
                     ))}
                 </div>
             </div>
@@ -142,7 +121,7 @@ export function MutesPage({ onOpenPlayer, toast }: {
             <Card>
                 <table className="w-full text-start text-[13px]">
                     <thead>
-                        <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+                        <tr className="text-[11px] text-adm-3">
                             <th className="px-4 py-2.5 font-semibold">Player</th>
                             <th className="px-4 py-2.5 font-semibold">Scope</th>
                             <th className="px-4 py-2.5 font-semibold">Reason</th>
@@ -153,24 +132,24 @@ export function MutesPage({ onOpenPlayer, toast }: {
                     </thead>
                     <tbody>
                         {items.map(m => (
-                            <tr key={m.id} className="border-t border-white/[0.05]">
+                            <tr key={m.id} className="border-t border-adm-hair">
                                 <td className="px-4 py-2.5">
                                     <div className="flex items-center gap-2">
                                         <OnlineDot online={m.online} />
                                         <div>
-                                            <div className="font-semibold text-zinc-100">{m.name ?? 'Unknown'}</div>
-                                            <div className="font-mono text-[11px] text-zinc-500">{m.citizenid}</div>
+                                            <div className="font-semibold text-adm-1">{m.name ?? 'Unknown'}</div>
+                                            <div className="font-mono text-[11px] text-adm-3">{m.citizenid}</div>
                                         </div>
                                     </div>
                                 </td>
                                 <td className="px-4 py-2.5"><Badge tone="amber">{scopeLabel(m.scope)}</Badge></td>
-                                <td className="max-w-[220px] truncate px-4 py-2.5 text-zinc-400" title={m.reason}>{m.reason || '—'}</td>
-                                <td className="px-4 py-2.5 text-zinc-400">
+                                <td className="max-w-[220px] truncate px-4 py-2.5 text-adm-2" title={m.reason}>{m.reason || '-'}</td>
+                                <td className="px-4 py-2.5 text-adm-2">
                                     {m.expiresAt
                                         ? <span className="inline-flex items-center gap-1"><Clock size={12} /> {fmtTime(m.expiresAt)}</span>
                                         : <Badge tone="red">Permanent</Badge>}
                                 </td>
-                                <td className="px-4 py-2.5 text-zinc-500">{m.adminName}</td>
+                                <td className="px-4 py-2.5 text-adm-3">{m.adminName}</td>
                                 <td className="px-3 py-2.5">
                                     <div className="flex justify-end gap-1.5">
                                         {m.citizenid && (

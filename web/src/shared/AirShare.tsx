@@ -8,6 +8,7 @@ export interface AirShareRequest {
     id:       string;
     kind:     string;
     fromName: string;
+    detail?:  string;
 }
 
 // Dynamic Island geometry (mirrors shell/PhoneShell's DI_* constants in screen space).
@@ -61,7 +62,11 @@ export function AirShareCard({ request, onRespond }: {
         : t('common.aContact', 'a contact');
     const message = request.kind === 'signature-request'
         ? t('common.asksYouToSign', '{name} asks you to sign a document', { name: request.fromName })
-        : t('common.wouldLikeToShare', '{name} would like to share {kind}', { name: request.fromName, kind: kindText });
+        : request.kind === 'photogram-profile'
+            ? (request.detail
+                ? t('common.wantsYouToFollowHandle', '{name} wants you to follow @{handle} on Photogram', { name: request.fromName, handle: request.detail })
+                : t('common.wantsYouToFollow', '{name} wants you to follow them on Photogram', { name: request.fromName }))
+            : t('common.wouldLikeToShare', '{name} would like to share {kind}', { name: request.fromName, kind: kindText });
 
     function close(accept: boolean) {
         if (phase === 'closing') return;

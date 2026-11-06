@@ -40,7 +40,7 @@ export function PlayersPage({ initialQuery, onOpenPlayer }: {
                     onChange={setQ}
                     autoFocus
                     onEnter={submit}
-                    placeholder="Search by name, citizen ID, phone number, Birdy handle or account username — press Enter"
+                    placeholder="Search by name, citizen ID, phone number, Birdy handle or account username, press Enter"
                 />
                 <Btn variant="primary" onClick={submit} disabled={q.trim().length === 1}>
                     <Search size={14} /> Search
@@ -58,7 +58,7 @@ export function PlayersPage({ initialQuery, onOpenPlayer }: {
             >
                 <table className="w-full text-start text-[13px]">
                     <thead>
-                        <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+                        <tr className="text-[11px] text-adm-3">
                             <th className="px-4 py-2.5 font-semibold">Player</th>
                             <th className="px-4 py-2.5 font-semibold">Citizen ID</th>
                             <th className="px-4 py-2.5 font-semibold">Phone number</th>
@@ -71,18 +71,18 @@ export function PlayersPage({ initialQuery, onOpenPlayer }: {
                             <tr
                                 key={h.citizenid}
                                 onClick={() => onOpenPlayer(h.citizenid)}
-                                className="cursor-pointer border-t border-white/[0.05] transition-colors hover:bg-white/[0.04]"
+                                className="cursor-pointer border-t border-adm-hair transition-colors hover:bg-adm-surface-2"
                             >
                                 <td className="px-4 py-2.5">
                                     <div className="flex items-center gap-2.5">
                                         <OnlineDot online={h.online} />
-                                        <span className="font-semibold text-zinc-100">{h.name ?? 'Unknown'}</span>
+                                        <span className="font-semibold text-adm-1">{h.name ?? 'Unknown'}</span>
                                     </div>
                                 </td>
-                                <td className="px-4 py-2.5 font-mono text-[12px] text-zinc-400">{h.citizenid}</td>
-                                <td className="px-4 py-2.5 text-zinc-300">{fmtPhone(h.phoneNumber)}</td>
+                                <td className="px-4 py-2.5 font-mono text-[12px] text-adm-2">{h.citizenid}</td>
+                                <td className="px-4 py-2.5 text-adm-2">{fmtPhone(h.phoneNumber)}</td>
                                 <td className="px-4 py-2.5">{h.matchedOn && <Badge>{h.matchedOn}</Badge>}</td>
-                                <td className="pe-3 text-zinc-600"><ChevronRight size={15} /></td>
+                                <td className="pe-3 text-adm-4"><ChevronRight size={15} /></td>
                             </tr>
                         ))}
                     </tbody>
@@ -117,14 +117,14 @@ export function PlayersPage({ initialQuery, onOpenPlayer }: {
                 <ConfirmModal
                     title={`SIM ${fmtPhone(trace.result?.number ?? trace.number)}`}
                     confirmLabel={trace.result?.ownerCid ? 'Open activator' : 'OK'}
-                    body={trace.error ? <span className="text-ios-red">{trace.error}</span> : (
+                    body={trace.error ? <span className="text-adm-danger">{trace.error}</span> : (
                         <div className="space-y-1.5 text-[13px]">
                             <div>Profile: {trace.result!.boundProfile
                                 ? <><Badge tone="green">character-bound</Badge> <span className="font-mono text-[12px]">{trace.result!.identity}</span></>
                                 : <span className="font-mono text-[12px]">{trace.result!.identity}</span>}
                             </div>
                             <div>First activated by: {trace.result!.ownerName
-                                ? <>{trace.result!.ownerName} <span className="font-mono text-[11.5px] text-zinc-500">{trace.result!.ownerCid}</span></>
+                                ? <>{trace.result!.ownerName} <span className="font-mono text-[11.5px] text-adm-3">{trace.result!.ownerCid}</span></>
                                 : (trace.result!.ownerCid ?? 'never activated')}
                             </div>
                             <div>Currently carried by: {trace.result!.holder

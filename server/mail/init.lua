@@ -88,6 +88,10 @@ lib.callback.register('sd-phone:server:mail:toggleFlag', function(src, payload)
     return actions.toggleFlag(src, payload)
 end)
 
+lib.callback.register('sd-phone:server:mail:runAction', function(src, payload)
+    return actions.runAction(src, payload)
+end)
+
 ---Move-to-bin repushes the badge snapshot.
 lib.callback.register('sd-phone:server:mail:moveToBin', function(src, payload)
     local result = actions.moveToBin(src, payload)

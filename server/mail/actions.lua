@@ -37,6 +37,14 @@ local MAX_ATTACHMENT_URL_LEN = 512
 local MAX_ATTACHMENT_NAME_LEN = 80
 ---@type integer Attached note body cap (chars).
 local MAX_ATTACHMENT_NOTE_LEN = 5000
+---@type integer Action button label cap (chars).
+local MAX_ACTION_LABEL_LEN = 32
+---@type integer Action event name cap (chars).
+local MAX_ACTION_EVENT_LEN = 128
+---@type integer Encoded ceiling on the data an action button hands its event.
+local MAX_ACTION_DATA_BYTES = 16384
+---@type integer Minimum gap between action button taps, per character, so a double tap fires once.
+local ACTION_GAP_MS = 1000
 
 ---@type integer Minimum gap between accepted sends, per character. A send rewrites the whole
 ---messages blob once per recipient, so this is the only thing bounding that cost per second.
@@ -249,6 +257,39 @@ local function clientAttachments(atts)
     return out
 end
 
+---@type table<string, integer> Vector type -> component count, for storing action data.
+local VECTOR_SIZE = { vector2 = 2, vector3 = 3, vector4 = 4 }
+
+---Copies action data into a JSON-safe shape. JSON would flatten a vector into a plain table that
+---loses `.xyz` and vector maths, so each is tagged and rebuilt on the client before its event fires.
+---@param v any
+---@param depth integer nesting guard
+---@return any
+local function packActionData(v, depth)
+    local size = VECTOR_SIZE[type(v)]
+    if size then
+        return { __vector = size, x = v.x, y = v.y, z = size >= 3 and v.z or nil, w = size == 4 and v.w or nil }
+    end
+    if type(v) ~= 'table' or depth > 16 then return v end
+    local out = {}
+    for k, item in pairs(v) do out[k] = packActionData(item, depth + 1) end
+    return out
+end
+
+---Normalises a system mail's action button: the client event it fires once when tapped, the data
+---handed to that event, and its label. Nil when the event name or the data is unusable.
+---@param raw any
+---@return { label: string, event: string, data: any, used: boolean }|nil
+local function normaliseAction(raw)
+    if type(raw) ~= 'table' then return nil end
+    local event = trim(raw.event)
+    if event == '' or #event > MAX_ACTION_EVENT_LEN then return nil end
+    if not util.encodedSize(raw.data, MAX_ACTION_DATA_BYTES) then return nil end
+    local label = trim(raw.label)
+    if #label > MAX_ACTION_LABEL_LEN then label = label:sub(1, MAX_ACTION_LABEL_LEN) end
+    return { label = label, event = event, data = packActionData(raw.data, 0), used = false }
+end
+
 ---Reshapes a hydrated message into the React `MailMessage` shape, injecting `accountId` and
 ---filling fallbacks for rows written by older builds.
 ---@param accountEmail string
@@ -267,6 +308,8 @@ local function serializeMessage(accountEmail, msg)
         read      = msg.read      == true,
         flagged   = msg.flagged   == true,
         attachments = clientAttachments(msg.attachments),
+        action    = type(msg.action) == 'table'
+            and { label = msg.action.label or '', used = msg.action.used == true } or nil,
     }
 end
 
@@ -404,6 +447,7 @@ function actions.signUp(source, payload)
         store.deleteAccount(email)
         return acctRes
     end
+    actions.drainPending(me.cid, email)
 
     local acc = store.getAccount(email)
     if not acc then return fail('mail.accountVanishedAfterCreation', 'Account vanished after creation') end
@@ -449,7 +493,8 @@ function actions.signIn(source, payload)
     end
 
     store.addSession(email, me.cid)
-    return ok({ account = serializeAccount(acc) })
+    actions.drainPending(me.cid, email)
+    return ok({ account = serializeAccount(store.getAccount(email) or acc) })
 end
 
 ---Signs out of an account on this player's phone; the account survives, only the caller's
@@ -573,7 +618,7 @@ end
 
 ---Composes and delivers mail as the system: no sender account, no ownership proof, no sent
 ---copy. Persists an `inbox` copy on every recipient that exists, then runs the fan-out.
----@param mail { to: string|string[], subject?: string, body?: string, from?: { name?: string, email?: string } }
+---@param mail { to: string|string[], subject?: string, body?: string, from?: { name?: string, email?: string }, attachments?: (string|table)[], action?: { label?: string, event: string, data?: any } }
 ---@return table envelope; data.delivered counts recipient accounts that existed
 function actions.systemSend(mail)
     if type(mail) ~= 'table' then return fail('mail.mailPayloadMustTable', 'Mail payload must be a table') end
@@ -620,6 +665,7 @@ function actions.systemSend(mail)
     else
         attachments = nil
     end
+    local action = normaliseAction(mail.action)
 
     local delivered = 0
     local sentId
@@ -639,6 +685,7 @@ function actions.systemSend(mail)
                 read    = false,
                 flagged = false,
                 attachments = attachments,
+                action  = action,
             }
             store.appendMessage(addr, inboxMessage, mailCfg.MaxMessagesPerAccount)
             delivered = delivered + 1
@@ -668,6 +715,52 @@ function actions.systemSend(mail)
 
     actions.deliver(pushes)
     return ok({ delivered = delivered })
+end
+
+---Sends a system mail to an identity's first signed-in mailbox. With no mailbox it is held, the
+---player is told to set Mail up, and it lands in the first account they create or sign into.
+---@param citizenid string data identity of the recipient
+---@param mail table systemSend payload; `to` is ignored
+---@return table envelope; data.held is true when the mail was held rather than delivered
+function actions.sendToCitizen(citizenid, mail)
+    if type(mail) ~= 'table' then return fail('mail.mailPayloadMustTable', 'Mail payload must be a table') end
+    if type(citizenid) ~= 'string' or citizenid == '' then
+        return fail('mail.leastOneRecipientRequired', 'At least one recipient is required')
+    end
+
+    local copy = {}
+    for k, v in pairs(mail) do copy[k] = v end
+    copy.to = nil
+
+    local account = store.listAccountsForCitizen(citizenid)[1]
+    if account then
+        copy.to = account.email
+        return actions.systemSend(copy)
+    end
+
+    store.queuePending(citizenid, copy)
+    local src = player.getSourceByIdentifier(citizenid)
+    if src then
+        local from = type(copy.from) == 'table' and trim(copy.from.name) or ''
+        TriggerClientEvent('sd-phone:client:notify', src, {
+            app = 'mail', appId = 'mail',
+            title = from ~= '' and from or 'Mail',
+            bodyKey = 'mail.mailWaitingSetUp', body = 'You have mail waiting. Set up Mail to read it.',
+            time = 'now',
+        })
+    end
+    return ok({ delivered = 0, held = true })
+end
+
+---Delivers every system mail held for an identity into `email`, oldest first.
+---@param citizenid string
+---@param email string mailbox the identity just signed into
+function actions.drainPending(citizenid, email)
+    local held = store.takePending(citizenid)
+    for i = 1, #held do
+        held[i].to = email
+        actions.systemSend(held[i])
+    end
 end
 
 ---Saves the caller's compose as a draft on the sender account: same ownership proof and caps
@@ -790,6 +883,29 @@ function actions.toggleFlag(source, payload)
         return m
     end)
     return ok()
+end
+
+---Uses a system mail's action button: consumes it once and returns the client event it names,
+---with its data, for the caller's client to fire. Ownership-gated.
+---@param source number
+---@param payload { accountEmail?: string, messageId?: string }
+---@return table envelope; data is { event, data, message } on success
+function actions.runAction(source, payload)
+    payload = payload or {}
+    local cid, err = requireOwnership(source, payload.accountEmail); if err then return err end
+    if not util.cooldown(cid, 'mail:action', ACTION_GAP_MS) then return fail('mail.slowDown', 'Slow down') end
+
+    local taken, updated
+    store.mutateMessage(payload.accountEmail, payload.messageId or '', function(m)
+        if type(m.action) == 'table' and not m.action.used then
+            taken = { event = m.action.event, data = m.action.data }
+            m.action.used = true
+        end
+        updated = m
+        return m
+    end)
+    if not taken then return fail('mail.actionAlreadyUsed', 'That has already been done') end
+    return ok({ event = taken.event, data = taken.data, message = serializeMessage(payload.accountEmail, updated) })
 end
 
 ---Moves a message to the bin, or hard-deletes it if it's already there. The flag clears on the

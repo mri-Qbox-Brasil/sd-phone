@@ -15,6 +15,7 @@ export function StoriesRow({ stories, lives, me, hasOwnStory, onOpen, onOpenLive
     onAddStory: () => void;
 }) {
     const scroller = useRef<HTMLDivElement>(null);
+    const mine = hasOwnStory ? stories.find(s => s.isMe) : undefined;
     const drag = useRef({ down: false, startX: 0, startScroll: 0, moved: 0 });
 
     function onPointerDown(e: ReactPointerEvent) {
@@ -44,7 +45,14 @@ export function StoriesRow({ stories, lives, me, hasOwnStory, onOpen, onOpenLive
             onClickCapture={onClickCapture}
             className="flex cursor-grab gap-3 overflow-x-auto no-scrollbar px-4 py-3.5 active:cursor-grabbing"
         >
-            <Ring src={me?.avatar ?? ''} label={t('photogram.yourStory', 'Your Story')} addBadge onClick={() => (hasOwnStory ? onOpen(0) : onAddStory())} />
+            <Ring
+                src={me?.avatar ?? ''}
+                label={t('photogram.yourStory', 'Your Story')}
+                plain={!mine}
+                seen={mine?.seen}
+                onClick={() => (mine ? onOpen(stories.indexOf(mine)) : onAddStory())}
+                onAdd={onAddStory}
+            />
             {lives.map(l => (
                 <Ring key={`live-${l.liveId}`} src={l.user.avatar} live label={l.user.handle} onClick={() => onOpenLive(l)} />
             ))}
@@ -55,27 +63,35 @@ export function StoriesRow({ stories, lives, me, hasOwnStory, onOpen, onOpenLive
     );
 }
 
-function Ring({ src, label, seen, addBadge, live, onClick }: {
-    src: string; label: string; seen?: boolean; addBadge?: boolean; live?: boolean; onClick: () => void;
+function Ring({ src, label, seen, plain, live, onClick, onAdd }: {
+    src: string; label: string; seen?: boolean; plain?: boolean; live?: boolean; onClick: () => void; onAdd?: () => void;
 }) {
     return (
-        <button type="button" onClick={onClick} className="flex w-[92px] shrink-0 flex-col items-center gap-2 active:opacity-70">
-            <div className="rounded-full p-[3px]" style={{ background: addBadge ? 'transparent' : live ? '#ED4956' : (seen ? '#d4d4d4' : IG.ring) }}>
-                <div className="relative">
-                    <img src={src} alt="" draggable={false} className="block h-[78px] w-[78px] rounded-full object-cover" />
-                    {addBadge && (
-                        <span className="absolute -bottom-[1px] -end-[1px] flex h-[28px] w-[28px] items-center justify-center rounded-full border-[2.5px] border-white" style={{ background: IG.blue }}>
-                            <Plus className="h-[19px] w-[19px] text-white" strokeWidth={3} />
-                        </span>
-                    )}
-                    {live && (
-                        <span className="absolute -bottom-[6px] left-1/2 -translate-x-1/2 rounded-[5px] border-[1.5px] border-white bg-[#ED4956] px-1.5 py-[1px] text-[11px] font-bold uppercase leading-none tracking-wide text-white">
-                            {t('photogram.live', 'Live')}
-                        </span>
-                    )}
+        <div className="relative w-[92px] shrink-0">
+            <button type="button" onClick={onClick} className="flex w-full flex-col items-center gap-2 active:opacity-70">
+                <div className="rounded-full p-[3px]" style={{ background: plain ? 'transparent' : live ? '#ED4956' : (seen ? '#d4d4d4' : IG.ring) }}>
+                    <div className="relative">
+                        <img src={src} alt="" draggable={false} className="block h-[78px] w-[78px] rounded-full object-cover" />
+                        {live && (
+                            <span className="absolute -bottom-[6px] left-1/2 -translate-x-1/2 rounded-[5px] border-[1.5px] border-white bg-[#ED4956] px-1.5 py-[1px] text-[11px] font-bold uppercase leading-none tracking-wide text-white">
+                                {t('photogram.live', 'Live')}
+                            </span>
+                        )}
+                    </div>
                 </div>
-            </div>
-            <span className="max-w-[88px] truncate text-[16px] font-medium text-black">{label}</span>
-        </button>
+                <span className="max-w-[88px] truncate text-[16px] font-medium text-black">{label}</span>
+            </button>
+            {onAdd && (
+                <button
+                    type="button"
+                    onClick={onAdd}
+                    aria-label={t('photogram.addToStory', 'Add to your story')}
+                    className="absolute end-[6px] top-[54px] flex h-[28px] w-[28px] items-center justify-center rounded-full border-[2.5px] border-white active:opacity-70"
+                    style={{ background: IG.blue }}
+                >
+                    <Plus className="h-[19px] w-[19px] text-white" strokeWidth={3} />
+                </button>
+            )}
+        </div>
     );
 }

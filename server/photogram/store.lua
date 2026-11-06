@@ -132,6 +132,10 @@ function store.ensureSchema()
             id          VARCHAR(16)  NOT NULL,
             author      VARCHAR(64)  NOT NULL,
             image       VARCHAR(512) NOT NULL,
+            caption     VARCHAR(500) NULL,
+            body        TEXT         NULL,
+            bg          VARCHAR(16)  NULL,
+            tags        JSON         NULL,
             created_at  BIGINT       NOT NULL,
             PRIMARY KEY (id),
             INDEX idx_photogram_stories_author (author, created_at),
@@ -196,6 +200,12 @@ function store.ensureSchema()
     ensureColumn('phone_photogram_profiles', 'is_private', 'is_private TINYINT(1) NOT NULL DEFAULT 0')
     ensureColumn('phone_photogram_profiles', 'verified',   'verified TINYINT(1) NOT NULL DEFAULT 0')
     ensureColumn('phone_photogram_follows',  'status',     "status VARCHAR(12) NOT NULL DEFAULT 'accepted'")
+    util.ensureColumns('phone_photogram_stories', {
+        caption = 'caption VARCHAR(500) NULL',
+        body    = 'body TEXT NULL',
+        bg      = 'bg VARCHAR(16) NULL',
+        tags    = 'tags JSON NULL',
+    })
 
     -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
     -- Each is a no-op once present; orphaned children are cleared first (they point at a
@@ -628,15 +638,16 @@ function store.commentLikeCount(commentId)
     return row and tonumber(row.n) or 0
 end
 
----Persists a story frame.
+---Persists a story frame: a photo or video with an optional caption and people tags, or a text
+---card on a background preset (image '').
 ---@param id string story id (store.newId)
 ---@param author string account handle
----@param image string image URL
+---@param frame table { image: string, caption: string|nil, tags: table[]|nil, body: string|nil, bg: string|nil }
 ---@param createdAt integer unix seconds
-function store.insertStory(id, author, image, createdAt)
+function store.insertStory(id, author, frame, createdAt)
     MySQL.insert.await(
-        'INSERT INTO phone_photogram_stories (id, author, image, created_at) VALUES (?, ?, ?, ?)',
-        { id, author, image, createdAt }
+        'INSERT INTO phone_photogram_stories (id, author, image, caption, body, bg, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        { id, author, frame.image, frame.caption, frame.body, frame.bg, frame.tags and encodeJson(frame.tags) or nil, createdAt }
     )
 end
 
@@ -651,7 +662,7 @@ end
 function store.activeStoriesFor(viewer, cutoff)
     return MySQL.query.await([[
         SELECT * FROM (
-            SELECT s.id, s.author, s.image, s.created_at,
+            SELECT s.id, s.author, s.image, s.caption, s.body, s.bg, s.tags, s.created_at,
                    pr.display_name, pr.avatar, pr.verified
             FROM phone_photogram_stories s
             JOIN phone_photogram_profiles pr ON pr.username = s.author
@@ -664,6 +675,23 @@ function store.activeStoriesFor(viewer, cutoff)
         ) recent
         ORDER BY recent.author ASC, recent.created_at ASC
     ]], { cutoff, viewer, viewer }) or {}
+end
+
+---One author's active (non-expired) stories, oldest first, with the author's profile card fields.
+---Read-only.
+---@param author string account handle
+---@param cutoff integer unix seconds - stories created at or before this are expired
+---@return table[] rows
+function store.activeStoriesBy(author, cutoff)
+    return MySQL.query.await([[
+        SELECT s.id, s.author, s.image, s.caption, s.body, s.bg, s.tags, s.created_at,
+               pr.display_name, pr.avatar, pr.verified
+        FROM phone_photogram_stories s
+        JOIN phone_photogram_profiles pr ON pr.username = s.author
+        WHERE s.author = ? AND s.created_at > ?
+        ORDER BY s.created_at ASC
+        LIMIT 100
+    ]], { author, cutoff }) or {}
 end
 
 ---How many live (non-expired) stories an author currently holds. Read-only.
@@ -701,6 +729,13 @@ end
 ---@return table|nil row { id, author }
 function store.getStoryRow(id)
     return MySQL.single.await('SELECT id, author FROM phone_photogram_stories WHERE id = ?', { id })
+end
+
+---Deletes one story frame and its view rows, views first.
+---@param id string story id
+function store.deleteStory(id)
+    MySQL.update.await('DELETE FROM phone_photogram_story_views WHERE story_id = ?', { id })
+    MySQL.update.await('DELETE FROM phone_photogram_stories WHERE id = ?', { id })
 end
 
 ---Drops expired stories and their view rows, views first.

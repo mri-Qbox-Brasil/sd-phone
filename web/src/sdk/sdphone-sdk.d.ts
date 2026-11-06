@@ -2,7 +2,7 @@
  * Type definitions for the sd-phone custom-app SDK (sdphone-sdk.js).
  *
  * Load it yourself, first thing in your page's <head>, and every global below exists from the first
- * line of your own code (sd-phone 1.1 and newer):
+ * line of your own code (sd-phone 1.0.8 and newer):
  *
  *     <script src="https://cfx-nui-sd-phone/web/build/sdphone-sdk.js"></script>
  *

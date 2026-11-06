@@ -50,6 +50,23 @@ module.exports = {
                     'card':   'rgba(40, 40, 45, 0.55)',
                     'card-border': 'rgba(255, 255, 255, 0.12)',
                 },
+                adm: {
+                    bg:            'rgb(var(--adm-bg) / <alpha-value>)',
+                    surface:       'rgb(var(--adm-surface) / <alpha-value>)',
+                    'surface-2':   'rgb(var(--adm-surface-2) / <alpha-value>)',
+                    'surface-3':   'rgb(var(--adm-surface-3) / <alpha-value>)',
+                    field:         'rgb(var(--adm-field) / <alpha-value>)',
+                    1:             'rgb(var(--adm-text-1) / <alpha-value>)',
+                    2:             'rgb(var(--adm-text-2) / <alpha-value>)',
+                    3:             'rgb(var(--adm-text-3) / <alpha-value>)',
+                    4:             'rgb(var(--adm-text-4) / <alpha-value>)',
+                    ok:            'rgb(var(--adm-ok) / <alpha-value>)',
+                    warn:          'rgb(var(--adm-warn) / <alpha-value>)',
+                    danger:        'rgb(var(--adm-danger) / <alpha-value>)',
+                    hair:          'rgba(255, 255, 255, 0.07)',
+                    'hair-strong': 'rgba(255, 255, 255, 0.11)',
+                    focus:         'rgba(255, 255, 255, 0.28)',
+                },
             },
             fontFamily: {
                 // SF Pro is paywalled; the stack falls through to the system

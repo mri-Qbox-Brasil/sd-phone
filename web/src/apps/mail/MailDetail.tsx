@@ -20,14 +20,27 @@ interface Props {
     onDelete:   (id: string) => void;
     onMove:     (id: string, folder: Folder) => void;
     onReply:    (msg: MailMessage) => void;
+    onRunAction: (msg: MailMessage) => Promise<string | null>;
 }
 
-export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibling, onToggleFlag, onDelete, onMove, onReply }: Props) {
+export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibling, onToggleFlag, onDelete, onMove, onReply, onRunAction }: Props) {
     const { goBack, pageStyle, animating } = useIosPush(onBack);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [confirmSpam, setConfirmSpam] = useState(false);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [navDir, setNavDir] = useState<'up' | 'down' | null>(null);
+    const [actionBusy, setActionBusy] = useState(false);
+    const [actionErr, setActionErr] = useState<string | null>(null);
+
+    async function runAction() {
+        if (actionBusy) return;
+        setActionBusy(true);
+        const err = await onRunAction(msg);
+        setActionBusy(false);
+        if (err) setActionErr(err);
+    }
+
+    const hasAttachments = (msg.attachments?.length ?? 0) > 0;
 
     function goSibling(id: string | null, dir: 'up' | 'down') {
         if (!id) return;
@@ -127,11 +140,26 @@ export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibli
 
                 <div className="bg-black/[0.10] dark:bg-white/[0.12]" style={{ height: '0.5px' }} />
 
-                <div dir="auto" className={`whitespace-pre-wrap px-5 pt-4 text-[16px] leading-[1.55] ${msg.attachments?.length ? 'pb-4' : 'pb-36'}`}>
+                <div dir="auto" className={`whitespace-pre-wrap px-5 pt-4 text-[16px] leading-[1.55] ${hasAttachments || msg.action ? 'pb-4' : 'pb-36'}`}>
                     {msg.body}
                 </div>
 
-                {(msg.attachments?.length ?? 0) > 0 && (
+                {msg.action && (
+                    <div className={`px-5 ${hasAttachments ? 'pb-4' : 'pb-36'}`}>
+                        <button
+                            type="button"
+                            onClick={() => void runAction()}
+                            disabled={msg.action.used || actionBusy}
+                            className={`flex w-full items-center justify-center rounded-[14px] py-[13px] text-[17px] font-semibold ${msg.action.used
+                                ? 'bg-black/[0.06] text-ios-gray dark:bg-white/[0.08]'
+                                : `bg-ios-blue text-white active:opacity-80 ${actionBusy ? 'opacity-60' : ''}`}`}
+                        >
+                            {msg.action.used ? t('mail.actionDone', 'Done') : (msg.action.label || t('mail.actionAccept', 'Accept'))}
+                        </button>
+                    </div>
+                )}
+
+                {hasAttachments && (
                     <div className="px-5 pb-36">
                         <div className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ios-gray">
                             {msg.attachments!.length === 1
@@ -188,6 +216,17 @@ export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibli
                     cancelLabel={t('mail.cancel', 'Cancel')}
                     onCancel={() => setConfirmSpam(false)}
                     onConfirm={() => { setConfirmSpam(false); onMove(msg.id, 'spam'); }}
+                />
+            )}
+
+            {actionErr && (
+                <AlertDialog
+                    title={t('mail.actionFailedTitle', 'Could Not Continue')}
+                    message={actionErr}
+                    confirmLabel={t('mail.ok', 'OK')}
+                    hideCancel
+                    onCancel={() => setActionErr(null)}
+                    onConfirm={() => setActionErr(null)}
                 />
             )}
         </div>

@@ -23,6 +23,32 @@ proxyCallback('sd-phone:mail:saveEmail',   'sd-phone:server:mail:saveEmail')
 proxyCallback('sd-phone:mail:declineEmail', 'sd-phone:server:mail:declineEmail')
 proxyCallback('sd-phone:mail:removeSavedEmail', 'sd-phone:server:mail:removeSavedEmail')
 
+---Rebuilds the vectors the server tagged when it stored an action's data.
+---@param v any
+---@param depth integer nesting guard
+---@return any
+local function unpackActionData(v, depth)
+    if type(v) ~= 'table' or depth > 16 then return v end
+    local size = v.__vector
+    if size == 2 then return vector2(v.x + 0.0, v.y + 0.0) end
+    if size == 3 then return vector3(v.x + 0.0, v.y + 0.0, v.z + 0.0) end
+    if size == 4 then return vector4(v.x + 0.0, v.y + 0.0, v.z + 0.0, v.w + 0.0) end
+    for k, item in pairs(v) do v[k] = unpackActionData(item, depth + 1) end
+    return v
+end
+
+---Taps a system mail's action button. The server consumes it and names the client event it
+---carries, which fires here with its data; only the updated message goes back to the app.
+RegisterNUICallback('sd-phone:mail:runAction', function(payload, cb)
+    local result = lib.callback.await('sd-phone:server:mail:runAction', false, payload)
+    if type(result) ~= 'table' or not result.success or type(result.data) ~= 'table' then
+        cb(result or { success = false })
+        return
+    end
+    cb({ success = true, data = { message = result.data.message } })
+    TriggerEvent(result.data.event, unpackActionData(result.data.data, 0))
+end)
+
 ---Server push: a mail landed in our signed-in inbox; relays it to the app.
 ---@param message table mail record from server/mail
 RegisterNetEvent('sd-phone:client:mail:received', function(message)

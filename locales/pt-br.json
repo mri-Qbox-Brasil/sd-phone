@@ -1224,7 +1224,10 @@
     "anIdCard": "um cartão de cidadão",
     "done": "Concluído",
     "notAuthorized": "Sem autorização",
-    "serverError": "Algo correu mal"
+    "serverError": "Algo correu mal",
+    "badRequest": "Isso não está disponível neste servidor",
+    "wantsYouToFollow": "{name} quer que você o siga no Photogram",
+    "wantsYouToFollowHandle": "{name} quer que você siga @{handle} no Photogram"
   },
   "compass": {
     "dirE": "E",
@@ -2332,7 +2335,13 @@
     "toRecipients": "para {recipients}",
     "tooManyRecipients": "Destinatários demais",
     "usernameMustLeast2Characters": "O nome de usuário deve ter pelo menos 2 caracteres",
-    "voiceMemo": "Memorando de voz"
+    "voiceMemo": "Memorando de voz",
+    "actionAccept": "Aceitar",
+    "actionAlreadyUsed": "Isso já foi feito",
+    "actionDone": "Concluído",
+    "actionFailed": "Não foi possível fazer isso agora.",
+    "actionFailedTitle": "Não foi possível continuar",
+    "mailWaitingSetUp": "Você tem e-mails esperando. Configure o Correio para lê-los."
   },
   "maps": {
     "accept": "Aceitar",
@@ -4422,7 +4431,27 @@
     "you": "Você",
     "youAreTheHost": "Você é o anfitrião",
     "youColon": "Você: {body}",
-    "yourStory": "Seu story"
+    "yourStory": "Seu story",
+    "addToStory": "Adicionar ao seu story",
+    "createTextStoryAction": "Criar story de texto",
+    "deleteStory": "Excluir story",
+    "deleteStoryMessage": "Este story será removido para todos. Isso não pode ser desfeito.",
+    "deleteStoryTitle": "Excluir story?",
+    "notStory": "Não é o seu story",
+    "removeTag": "Remover marcação",
+    "shareProfileHint": "Toque em alguém por perto para enviar seu perfil. Quando a pessoa aceitar, ela seguirá você.",
+    "sharing": "Compartilhando…",
+    "storyBackground": "Fundo {n}",
+    "storyCreateFailed": "Não foi possível compartilhar seu story",
+    "storyDeleteFailed": "Não foi possível excluir o story",
+    "storyNotFound": "Story não encontrado",
+    "storyRoomLeft": "Seu story só tem espaço para mais {n} hoje",
+    "storySlide": "Slide {n}",
+    "storyTextEmpty": "Escreva algo primeiro",
+    "tagPeople": "Marcar pessoas",
+    "tagSearchHint": "Pesquise qualquer pessoa no Photogram para marcá-la.",
+    "viewStory": "Ver story",
+    "writeStory": "Comece a digitar…"
   },
   "photos": {
     "add": "Adicionar",
@@ -7354,5 +7383,16 @@
     "uploadLimitReached": "Limite de envios atingido, tente de novo mais tarde",
     "voicemailNotFound": "Correio de voz não encontrado",
     "voicemailTitle": "Correio de Voz"
+  },
+  "computers": {
+    "linkDisabled": "Vínculo com o celular desativado para {resource}",
+    "unknownAction": "Ação de vínculo desconhecida: {action}"
+  },
+  "qbphone": {
+    "bankMoneyRemoved": "{amount} foi removido do seu saldo.",
+    "contactDetailsOffered": "Dados de contato oferecidos.",
+    "newMailFrom": "Você recebeu um novo e-mail de {sender}.",
+    "noNumberToShare": "Seu celular não tem número para compartilhar.",
+    "theyHaveNoPhone": "A pessoa não tem celular."
   }
 }

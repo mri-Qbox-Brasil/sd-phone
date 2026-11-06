@@ -29,7 +29,7 @@ export function NumbersPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => v
                     onChange={setQ}
                     autoFocus
                     onEnter={submit}
-                    placeholder="Search by number, profile id or activator citizen ID — press Enter"
+                    placeholder="Search by number, profile id or activator citizen ID, press Enter"
                 />
                 <Btn variant="primary" onClick={submit}>
                     <Search size={14} /> Search
@@ -44,7 +44,7 @@ export function NumbersPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => v
             >
                 <table className="w-full text-start text-[13px]">
                     <thead>
-                        <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+                        <tr className="text-[11px] text-adm-3">
                             <th className="px-4 py-2.5 font-semibold">Number</th>
                             <th className="px-4 py-2.5 font-semibold">Profile</th>
                             <th className="px-4 py-2.5 font-semibold">First activated by</th>
@@ -59,28 +59,28 @@ export function NumbersPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => v
                                 key={row.number}
                                 onClick={() => { if (row.ownerCid) onOpenPlayer(row.ownerCid); }}
                                 className={row.ownerCid
-                                    ? 'cursor-pointer border-t border-white/[0.05] transition-colors hover:bg-white/[0.04]'
-                                    : 'border-t border-white/[0.05]'}
+                                    ? 'cursor-pointer border-t border-adm-hair transition-colors hover:bg-adm-surface-2'
+                                    : 'border-t border-adm-hair'}
                             >
-                                <td className="px-4 py-2.5 font-mono text-zinc-100">{fmtPhone(row.number)}</td>
+                                <td className="px-4 py-2.5 font-mono text-adm-1">{fmtPhone(row.number)}</td>
                                 <td className="px-4 py-2.5">
                                     {row.boundProfile
                                         ? <span className="inline-flex items-center gap-1.5"><Badge tone="green">bound</Badge>
-                                            <span className="font-mono text-[11.5px] text-zinc-400">{row.identity}</span></span>
+                                            <span className="font-mono text-[11.5px] text-adm-2">{row.identity}</span></span>
                                         : <Badge>blank</Badge>}
                                 </td>
                                 <td className="px-4 py-2.5">
                                     {row.ownerName
-                                        ? <span>{row.ownerName} <span className="font-mono text-[11px] text-zinc-500">{row.ownerCid}</span></span>
-                                        : (row.ownerCid ?? <span className="text-zinc-600">never activated</span>)}
+                                        ? <span>{row.ownerName} <span className="font-mono text-[11px] text-adm-3">{row.ownerCid}</span></span>
+                                        : (row.ownerCid ?? <span className="text-adm-4">never activated</span>)}
                                 </td>
                                 <td className="px-4 py-2.5">
                                     {row.holder
-                                        ? <span className="text-zinc-200">{row.holder.name ?? row.holder.cid ?? 'Unknown'}</span>
-                                        : <span className="text-zinc-600">—</span>}
+                                        ? <span className="text-adm-1">{row.holder.name ?? row.holder.cid ?? 'Unknown'}</span>
+                                        : <span className="text-adm-4">-</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-zinc-400">{fmtTime(row.createdAt)}</td>
-                                <td className="pe-3 text-zinc-600">{row.ownerCid && <ChevronRight size={15} />}</td>
+                                <td className="px-4 py-2.5 text-adm-2">{fmtTime(row.createdAt)}</td>
+                                <td className="pe-3 text-adm-4">{row.ownerCid && <ChevronRight size={15} />}</td>
                             </tr>
                         ))}
                     </tbody>

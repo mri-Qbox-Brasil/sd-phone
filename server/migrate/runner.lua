@@ -91,7 +91,7 @@ local BLURB = {
 ---@type (string|{ [1]: string, [2]: string })[]
 local TARGETS = {
     'phone_settings', 'phone_contacts', 'phone_calls', 'phone_blocked',
-    { 'phone_messages', 'citizenid' }, 'phone_message_groups', 'phone_message_group_members',
+    { 'phone_messages', 'conversation' }, 'phone_message_groups', 'phone_message_group_members',
     { 'phone_photos', 'citizenid' }, { 'phone_photo_albums', 'citizenid' },
     'phone_photo_album_items', { 'phone_notes', 'citizenid' },
     'phone_photogram_profiles', 'phone_photogram_posts', 'phone_photogram_comments',

@@ -23,29 +23,29 @@ export function PostCard({ post, onOpenPlayer, onDelete, showAuthorIdentity = tr
     const media: AdminContentMedia[] = (post.images ?? []).map(url => ({ url }));
 
     return (
-        <div className="border-t border-white/[0.05] px-4 py-3 first:border-t-0">
+        <div className="border-t border-adm-hair px-4 py-3 first:border-t-0">
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
-                        <span className="font-bold text-zinc-100">{post.display ?? 'Deleted profile'}</span>
+                        <span className="font-semibold text-adm-1">{post.display ?? 'Deleted profile'}</span>
                         {post.verified && <BadgeCheck size={14} style={{ color: BADGE_TINT[post.verifiedType ?? 'blue'] ?? BADGE_TINT.blue }} />}
-                        {post.handle && <span className="text-zinc-500">@{post.handle}</span>}
+                        {post.handle && <span className="text-adm-3">@{post.handle}</span>}
                         {post.parentId && <Badge tone="neutral">reply</Badge>}
-                        <span className="text-zinc-600">·</span>
-                        <span className="text-[12px] text-zinc-500">{fmtTime(post.createdAt)}</span>
+                        <span className="text-adm-4">·</span>
+                        <span className="text-[12px] text-adm-3">{fmtTime(post.createdAt)}</span>
                     </div>
                     {showAuthorIdentity && (
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-zinc-500">
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-adm-3">
                             <OnlineDot online={post.authorOnline} />
-                            <span className="font-semibold text-zinc-400">{post.authorName ?? 'Unknown player'}</span>
+                            <span className="font-semibold text-adm-2">{post.authorName ?? 'Unknown player'}</span>
                             <span className="font-mono">{post.authorCid}</span>
                         </div>
                     )}
-                    <div className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-200">
-                        {post.body || <span className="italic text-zinc-500">(no text)</span>}
+                    <div className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-snug text-adm-1">
+                        {post.body || <span className="italic text-adm-3">(no text)</span>}
                     </div>
                     <MediaStrip media={media} className="mt-2" onOpen={setLightbox} />
-                    <div className="mt-1.5 flex items-center gap-4 text-[11.5px] text-zinc-500">
+                    <div className="mt-1.5 flex items-center gap-4 text-[11.5px] text-adm-3">
                         <span className="inline-flex items-center gap-1"><Heart size={12} /> {post.likes}</span>
                         <span className="inline-flex items-center gap-1"><MessageCircle size={12} /> {post.replies}</span>
                         <span className="inline-flex items-center gap-1"><Eye size={12} /> {post.views}</span>
@@ -69,7 +69,7 @@ export function PostCard({ post, onOpenPlayer, onDelete, showAuthorIdentity = tr
                     index={lightbox}
                     onIndex={setLightbox}
                     onClose={() => setLightbox(null)}
-                    caption={<span className="font-semibold text-zinc-200">{post.display ?? post.authorName ?? 'Unknown'}</span>}
+                    caption={<span className="font-semibold text-adm-1">{post.display ?? post.authorName ?? 'Unknown'}</span>}
                 />
             )}
         </div>
@@ -111,7 +111,7 @@ export function BirdyPage({ initialQuery, onOpenPlayer, toast }: {
     return (
         <div className="space-y-4">
             <div className="flex gap-2">
-                <Input value={q} onChange={setQ} onEnter={submit} placeholder="Filter posts by content or handle — press Enter" />
+                <Input value={q} onChange={setQ} onEnter={submit} placeholder="Filter posts by content or handle, press Enter" />
                 <Btn variant="primary" onClick={submit} disabled={q.trim().length === 1}>Search</Btn>
             </div>
 

@@ -37,7 +37,7 @@ export function MediaStrip({ media, size = 64, max = 6, onOpen, className }: {
                             type="button"
                             onClick={e => { e.stopPropagation(); onOpen(at); }}
                             style={{ width: size, height: size }}
-                            className="group relative shrink-0 overflow-hidden rounded-lg bg-black/40 ring-1 ring-white/[0.08] transition-transform hover:scale-[1.04]"
+                            className="group relative shrink-0 overflow-hidden rounded-lg bg-black/40 ring-1 ring-adm-hair-strong transition-transform hover:scale-[1.04]"
                             title={m.video ? 'Play clip' : 'View full size'}
                         >
                             <img src={m.url ?? undefined} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" />
@@ -53,7 +53,7 @@ export function MediaStrip({ media, size = 64, max = 6, onOpen, className }: {
                             type="button"
                             onClick={e => { e.stopPropagation(); onOpen(visuals[max]?.at ?? 0); }}
                             style={{ width: size, height: size }}
-                            className="shrink-0 rounded-lg bg-white/[0.05] text-[12px] font-bold text-zinc-400 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.09] hover:text-zinc-200"
+                            className="shrink-0 rounded-lg bg-adm-surface-2 text-[12px] font-semibold text-adm-2 ring-1 ring-adm-hair-strong transition-colors hover:bg-adm-surface-3 hover:text-adm-1"
                         >
                             +{extra}
                         </button>
@@ -148,14 +148,14 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
         <div
             className={clsx(
                 'absolute inset-0 z-50 flex flex-col bg-black/85',
-                leaving ? 'admin-scrim-out' : 'admin-scrim-in',
+                leaving ? 'adm-anim-fade-out' : 'adm-anim-fade-in',
             )}
             onMouseDown={beginClose}
             onAnimationEnd={e => { if (leaving && e.target === e.currentTarget) onClose(); }}
         >
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6">
                 {isAudio && (
-                    <div className="w-[420px] max-w-full rounded-xl bg-[#1a1b1f] p-3 shadow-2xl" onMouseDown={e => e.stopPropagation()}>
+                    <div className="w-[420px] max-w-full rounded-lg border border-adm-hair-strong bg-adm-surface p-3 shadow-2xl" onMouseDown={e => e.stopPropagation()}>
                         <AudioPlayer src={current.audio ?? current.url ?? ''} />
                     </div>
                 )}
@@ -166,7 +166,7 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
                         controls
                         autoPlay
                         loop
-                        className="max-h-full max-w-full rounded-xl shadow-2xl"
+                        className="max-h-full max-w-full rounded-lg shadow-2xl"
                         onMouseDown={e => e.stopPropagation()}
                     />
                 )}
@@ -183,7 +183,7 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
                         onClick={onImageClick}
                         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomed ? ZOOM : 1})` }}
                         className={clsx(
-                            'max-h-full max-w-full rounded-xl object-contain shadow-2xl',
+                            'max-h-full max-w-full rounded-lg object-contain shadow-2xl',
                             dragging ? 'transition-none' : 'transition-transform duration-200 ease-out',
                             zoomed ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in',
                         )}
@@ -195,7 +195,7 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
                         <button
                             type="button"
                             onMouseDown={e => { e.stopPropagation(); step(-1); }}
-                            className="absolute start-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2.5 text-zinc-200 ring-1 ring-white/10 transition-colors hover:bg-black/70 hover:text-white"
+                            className="absolute start-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2.5 text-adm-1 ring-1 ring-adm-hair-strong transition-colors hover:bg-black/70 hover:text-adm-1"
                             title="Previous"
                         >
                             <ChevronLeft size={19} />
@@ -203,7 +203,7 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
                         <button
                             type="button"
                             onMouseDown={e => { e.stopPropagation(); step(1); }}
-                            className="absolute end-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2.5 text-zinc-200 ring-1 ring-white/10 transition-colors hover:bg-black/70 hover:text-white"
+                            className="absolute end-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2.5 text-adm-1 ring-1 ring-adm-hair-strong transition-colors hover:bg-black/70 hover:text-adm-1"
                             title="Next"
                         >
                             <ChevronRight size={19} />
@@ -213,14 +213,14 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
             </div>
 
             <div className="flex shrink-0 justify-center px-6 pb-5" onMouseDown={e => e.stopPropagation()}>
-                <div className="flex max-w-full items-center gap-3 rounded-xl bg-[#1a1b1f]/95 px-4 py-2.5 text-[12.5px] shadow-xl ring-1 ring-white/10">
+                <div className="flex max-w-full items-center gap-3 rounded-lg bg-adm-surface-3 px-4 py-2.5 text-[12.5px] shadow-xl ring-1 ring-adm-hair-strong">
                     {caption && <span className="min-w-0 truncate">{caption}</span>}
-                    {count > 1 && <span className="shrink-0 tabular-nums text-zinc-500">{index + 1} / {count}</span>}
+                    {count > 1 && <span className="shrink-0 tabular-nums text-adm-3">{index + 1} / {count}</span>}
                     {isImage && (
                         <button
                             type="button"
                             onClick={() => (zoomed ? resetZoom() : setZoomed(true))}
-                            className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 font-semibold text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
+                            className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 font-semibold text-adm-2 transition-colors hover:bg-adm-surface-3 hover:text-adm-1"
                             title={zoomed ? 'Fit to panel' : 'Zoom in'}
                         >
                             {zoomed ? <Minimize2 size={14} /> : <ZoomIn size={14} />}
@@ -230,7 +230,7 @@ export function MediaLightbox({ media, index, onIndex, onClose, caption }: {
                     <button
                         type="button"
                         onClick={beginClose}
-                        className="shrink-0 rounded-lg p-1 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                        className="shrink-0 rounded-lg p-1 text-adm-3 transition-colors hover:bg-adm-surface-3 hover:text-adm-1"
                         title="Close (Esc)"
                     >
                         <X size={15} />
