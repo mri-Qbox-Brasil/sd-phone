@@ -1,6 +1,6 @@
 ---@type table sd-phone config root (configs/config.lua).
 local config  = require 'configs.config'
----@type table Saved-jobs store (server.services.jobstore): the phone's multijob list + offers.
+---@type table Saved-jobs store (server.services.jobstore): the character's multijob list + offers.
 local store   = require 'server.services.jobstore'
 ---@type table Services actions (server.services.actions): reused for the live roster push.
 local actions = require 'server.services.actions'
@@ -9,6 +9,10 @@ local society = require 'bridge.server.society'
 ---@type table Job bridge (bridge.server.job): SetJob/duty writes + the multijob capability probe.
 local job     = require 'bridge.server.job'
 ---@type table Player bridge (bridge.server.player): citizenid resolution from src.
+---
+---Identity here is ALWAYS read with getRealIdentifier, never getIdentifier: under unique phones
+---(configs/uniqueandsim.lua) that one is rewrapped to return the acting SIM identity, and a job
+---belongs to the character, not to whichever phone they are holding.
 local player  = require 'bridge.server.player'
 
 ---@type table Services config (configs/services.lua).
@@ -66,7 +70,7 @@ function jobs.list(src)
         return ok({ multijob = false, jobs = {}, invites = {}, max = MAX })
     end
 
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return fail('services.playerNotFound', 'Player not found') end
 
     local activeJob = job.getName(src)
@@ -118,7 +122,7 @@ end
 function jobs.switch(src, payload)
     payload = type(payload) == 'table' and payload or {}
     if not job.supportsMultijob() then return fail('services.notAvailableHere', 'Not available here') end
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return fail('services.playerNotFound', 'Player not found') end
 
     local target = tostring(payload.job or '')
@@ -149,7 +153,7 @@ end
 function jobs.remove(src, payload)
     payload = type(payload) == 'table' and payload or {}
     if not job.supportsMultijob() then return fail('services.notAvailableHere', 'Not available here') end
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return fail('services.playerNotFound', 'Player not found') end
 
     local target = tostring(payload.job or '')
@@ -175,7 +179,7 @@ end
 function jobs.accept(src, payload)
     payload = type(payload) == 'table' and payload or {}
     if not job.supportsMultijob() then return fail('services.notAvailableHere', 'Not available here') end
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return fail('services.playerNotFound', 'Player not found') end
 
     local id  = tostring(payload.id or '')
@@ -199,7 +203,7 @@ end
 ---@return table
 function jobs.decline(src, payload)
     payload = type(payload) == 'table' and payload or {}
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return fail('services.playerNotFound', 'Player not found') end
     store.deleteInvite(cid, tostring(payload.id or ''))
     return jobs.list(src)

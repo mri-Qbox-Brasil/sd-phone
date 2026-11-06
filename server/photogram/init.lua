@@ -11,6 +11,8 @@ local live    = require 'server.photogram.live'
 local watchers = require('server.watchers').of('photogram')
 ---@type table Shared server helpers (server.util): disconnect sweep registration.
 local util    = require 'server.util'
+---@type table AirShare core (server.share.core): delivery handlers per share kind.
+local share   = require 'server.share.core'
 
 -- Boot thread: creates/patches the photogram tables.
 CreateThread(function()
@@ -45,12 +47,15 @@ register('profile',          function(src, payload) return actions.profile(src, 
 register('profilePosts',     function(src, payload) return actions.profilePosts(src, payload) end)
 register('updateProfile',    function(src, payload) return actions.updateProfile(src, payload) end)
 register('toggleFollow',     function(src, payload) return actions.toggleFollow(src, payload) end)
+register('shareProfile',     function(src, payload) return actions.shareProfile(src, payload) end)
 register('respondFollow',    function(src, payload) return actions.respondFollow(src, payload) end)
 register('followRequests',   function(src) return actions.followRequests(src) end)
 register('followList',       function(src, payload) return actions.followList(src, payload) end)
 register('search',           function(src, payload) return actions.search(src, payload) end)
 register('stories',          function(src) return actions.stories(src) end)
+register('userStories',      function(src, payload) return actions.userStories(src, payload) end)
 register('addStory',         function(src, payload) return actions.addStory(src, payload) end)
+register('deleteStory',      function(src, payload) return actions.deleteStory(src, payload) end)
 register('markStorySeen',    function(src, payload) return actions.markStorySeen(src, payload) end)
 register('activity',         function(src) return actions.activity(src) end)
 register('counts',           function(src) return actions.counts(src) end)
@@ -60,6 +65,9 @@ register('dmThread',         function(src, payload) return actions.dmThread(src,
 register('dmSend',           function(src, payload) return actions.dmSend(src, payload) end)
 register('dmReact',          function(src, payload) return actions.dmReact(src, payload) end)
 register('deleteAccount',    function(src) return actions.deleteAccount(src) end)
+
+-- AirShare delivery: accepting a shared profile follows it and opens it on the recipient's phone.
+share.registerHandler('photogram-profile', actions.followFromShare)
 
 ---Subscribes or unsubscribes the caller to the feed and live-list pushes. The app calls this
 ---whenever it moves in or out of the foreground, and re-syncs on the way back in.

@@ -111,3 +111,14 @@ exports('messageCompany', function(source, payload)
     local result = actions.messageCompany(source, payload)
     return { success = result.success == true, message = result.message }
 end)
+
+---Public export: exports['sd-phone']:fireEmployee(citizenid, job). Fires a character from a job
+---the way the Services app does and drops it from their phone job list; no permission checks.
+---@param citizenid string framework character id (citizenid on QBCore/QBox, identifier on ESX)
+---@param jobName string framework job name
+---@return boolean fired false when they hold no such job, or an online fire was refused
+exports('fireEmployee', function(citizenid, jobName)
+    if type(citizenid) ~= 'string' or citizenid == '' then return false end
+    if type(jobName) ~= 'string' or jobName == '' then return false end
+    return actions.fireEmployee(citizenid, jobName)
+end)

@@ -49,6 +49,7 @@ local CID_SINGLE = {
     { 'phone_signatures',            'citizenid' },
     { 'phone_garage_images',         'citizenid' },
     { 'phone_mail_saved_emails',     'citizenid' },
+    { 'phone_mail_pending',          'citizenid' },
     { 'phone_racing_notifications',  'citizenid' },
     { 'phone_service_msg_reads',     'viewer' },
     { 'phone_streak_likes',          'citizenid' },

@@ -3,6 +3,10 @@ local framework = require 'bridge.shared.framework'
 ---@type table Garage bridge (bridge.server.garages): the active system's column profile, so a
 ---vehicle's garage and state are read the same way here as in the Garages app.
 local garages = require 'bridge.server.garages'
+---@type table|nil AI Core helpers (bridge.server.aicore): characters, names and search; nil on
+---every other framework. AI Core's own tables trail its memory, so on AI Core nothing here reads
+---them: characters come from ai-core and vehicles from ai-vehicles.
+local aicore = framework.aicore and require 'bridge.server.aicore' or nil
 
 ---@type table Records module; the table returned at end of file. Read-only reads of the
 ---FRAMEWORK's own citizen and vehicle tables, so framework-shape knowledge stays in bridge/ and
@@ -115,6 +119,24 @@ local function decode(raw)
     return (ok and type(out) == 'table') and out or {}
 end
 
+---Licence keys held in a qb-shaped metadata table, under either spelling.
+---@param meta table decoded metadata
+---@return string[] licences
+local function licencesOf(meta)
+    local licences = {}
+    if type(meta.licences) == 'table' then
+        for key, held in pairs(meta.licences) do
+            if held == true and type(key) == 'string' then licences[#licences + 1] = key end
+        end
+    end
+    if type(meta.licenses) == 'table' then
+        for key, held in pairs(meta.licenses) do
+            if held == true and type(key) == 'string' then licences[#licences + 1] = key end
+        end
+    end
+    return licences
+end
+
 ---Builds the normalised citizen shape from a QBCore/QBox `players` row.
 ---@param row table
 ---@return table citizen
@@ -127,17 +149,7 @@ local function qbCitizen(row)
     local last  = str(info.lastname)
     local name  = str((first .. ' ' .. last))
 
-    local licences = {}
-    if type(meta.licences) == 'table' then
-        for key, held in pairs(meta.licences) do
-            if held == true and type(key) == 'string' then licences[#licences + 1] = key end
-        end
-    end
-    if type(meta.licenses) == 'table' then
-        for key, held in pairs(meta.licenses) do
-            if held == true and type(key) == 'string' then licences[#licences + 1] = key end
-        end
-    end
+    local licences = licencesOf(meta)
 
     return {
         citizenid   = row.citizenid,
@@ -245,6 +257,128 @@ local function ndCitizen(row)
     }
 end
 
+---Phone numbers for a set of citizenids from sd-phone's own `phone_settings`, for AI Core, which
+---keeps no number of its own.
+---@param cids string[]
+---@return table<string, string> number by citizenid
+local function phoneNumbersOf(cids)
+    local out = {}
+    if #cids == 0 then return out end
+
+    local marks = ('?,'):rep(#cids):sub(1, -2)
+    local rows = MySQL.query.await(
+        ("SELECT citizenid, phone_number FROM phone_settings WHERE device = 'phone' AND citizenid IN (%s)"):format(marks),
+        cids) or {}
+    for i = 1, #rows do out[rows[i].citizenid] = str(rows[i].phone_number) end
+    return out
+end
+
+---Builds the normalised citizen shape from an AI Core character (aicore.characters). The phone
+---number comes from the phone's own settings; the job is the highest-graded one held.
+---@param character table
+---@param phone string|nil
+---@return table citizen
+local function aiCitizen(character, phone)
+    local info  = character.info
+    local meta  = type(character.metadata) == 'table' and character.metadata or {}
+    local first = str(info.firstname)
+    local last  = str(info.lastname)
+    local name  = str(first .. ' ' .. last)
+
+    local job, grade = '', 0
+    for _, held in ipairs(type(character.jobs) == 'table' and character.jobs or {}) do
+        local g = tonumber(held.grade) or 0
+        if job == '' or g > grade then job, grade = str(held.job), g end
+    end
+
+    return {
+        citizenid   = info.citizenid,
+        name        = name ~= '' and name or info.citizenid,
+        firstname   = first,
+        lastname    = last,
+        dob         = str(info.birthdate),
+        sex         = str(info.sex),
+        phone       = str(phone),
+        nationality = str(info.nationality),
+        job         = job,
+        jobGrade    = grade,
+        licences    = licencesOf(meta),
+        fingerprint = str(meta.fingerprint),
+        bloodtype   = str(meta.bloodtype),
+        callsign    = str(meta.callsign),
+    }
+end
+
+---Normalised citizens for a list of citizenids, in that order, read from ai-core all at once.
+---Unknown citizenids are left out.
+---@param cids string[]
+---@return table[] citizens
+local function aiCitizens(cids)
+    local characters = aicore.characters(cids)
+    local phones = phoneNumbersOf(cids)
+
+    local out = {}
+    for i = 1, #cids do
+        local character = characters[cids[i]]
+        if character then out[#out + 1] = aiCitizen(character, phones[cids[i]]) end
+    end
+    return out
+end
+
+---The citizenids of every loaded AI Core character, by name. AI Core keeps no list of everyone to
+---browse, so a browse shows who is in the city.
+---@return string[] cids
+local function aiLoadedCids()
+    local loaded = {}
+    local ok, sources = pcall(function() return exports['ai-core']:GetLoadedSources() end)
+    for _, src in ipairs(ok and type(sources) == 'table' and sources or {}) do
+        local info = exports['ai-core']:GetCharacter(src)
+        if type(info) == 'table' and type(info.citizenid) == 'string' then
+            loaded[#loaded + 1] = { cid = info.citizenid, name = str(str(info.firstname) .. ' ' .. str(info.lastname)):lower() }
+        end
+    end
+    table.sort(loaded, function(a, b) return a.name < b.name end)
+
+    local out = {}
+    for i = 1, #loaded do out[i] = loaded[i].cid end
+    return out
+end
+
+---A page of AI Core citizens. A search takes SearchCharacters' matches (first / last name
+---prefixes, citizenid) and then phone number matches from the phone's own settings; a browse takes
+---the loaded characters. SearchCharacters reports no total, so a further page reads as one more row.
+---@param term string
+---@param like string escaped LIKE pattern of the term
+---@param browse boolean
+---@param limit integer
+---@param offset integer
+---@return table[] citizens
+---@return integer total
+local function aiSearchCitizens(term, like, browse, limit, offset)
+    local cids
+    if browse then
+        cids = aiLoadedCids()
+    else
+        local want, seen = offset + limit + 1, {}
+        cids = {}
+        local function add(cid)
+            if type(cid) ~= 'string' or cid == '' or seen[cid] or #cids >= want then return end
+            seen[cid] = true
+            cids[#cids + 1] = cid
+        end
+
+        for _, c in ipairs((aicore.search(term, want))) do add(c.citizenid) end
+        local rows = MySQL.query.await(
+            "SELECT citizenid FROM phone_settings WHERE device = 'phone' AND phone_number LIKE ? LIMIT ?",
+            { like, want }) or {}
+        for i = 1, #rows do add(rows[i].citizenid) end
+    end
+
+    local page = {}
+    for i = offset + 1, math.min(#cids, offset + limit) do page[#page + 1] = cids[i] end
+    return aiCitizens(page), #cids
+end
+
 ---@type string QBCore/QBox citizen projection.
 local QB_CITIZEN_COLS = 'citizenid, charinfo, metadata, job'
 ---@type string ESX citizen projection.
@@ -258,6 +392,8 @@ local ND_CITIZEN_COLS = 'charid, firstname, lastname, dob, gender, phonenumber, 
 ---@return table|nil citizen
 function records.getCitizen(cid)
     if type(cid) ~= 'string' or cid == '' then return nil end
+
+    if aicore then return aiCitizens({ cid })[1] end
 
     if framework.qb then
         local row = MySQL.single.await(
@@ -289,6 +425,7 @@ end
 function records.namesFor(cids)
     local out = {}
     if type(cids) ~= 'table' or #cids == 0 then return out end
+    if aicore then return aicore.names(cids) end
 
     local marks = {}
     for i = 1, #cids do marks[i] = '?' end
@@ -342,6 +479,8 @@ function records.searchCitizens(term, page, pageSize)
     local offset = math.max(0, (math.max(1, math.floor(tonumber(page) or 1)) - 1) * limit)
     local like   = '%' .. term:gsub('([%%_\\])', '\\%1') .. '%'
     local browse = #term < MIN_TERM
+
+    if aicore then return aiSearchCitizens(term, like, browse, limit, offset) end
 
     if framework.qb then
         local where, args = '', {}
@@ -434,6 +573,161 @@ local function vehicleOf(row, modelCol)
     }
 end
 
+---A synchronous ai-vehicles export's answer, nil when it errors (ai-vehicles not running).
+---@param name string export name
+---@param ... any export arguments
+---@return any
+local function aiVehicles(name, ...)
+    local args = table.pack(...)
+    local ok, res = pcall(function()
+        return exports['ai-vehicles'][name](exports['ai-vehicles'], table.unpack(args, 1, args.n))
+    end)
+    return ok and res or nil
+end
+
+---Builds the normalised vehicle shape from an ai-vehicles vehicle in its `framework` shape. The
+---owner is a citizenid, resolved from ai-vehicles' character id unless the caller already knows it.
+---@param v table
+---@param ownerCid? string
+---@return table vehicle
+local function aiVehicle(v, ownerCid)
+    local props = type(v.props) == 'table' and v.props or {}
+    local model = str(v.model)
+    if model == '' then model = str(props.model) end
+
+    local owner = ownerCid
+    if not owner and type(v.owner) == 'table' and v.owner.type == 'character' then
+        owner = aicore.citizenId(v.owner.id)
+    end
+
+    local garage, stored, impound = garages.locationOf(v)
+    return {
+        plate   = str(v.plate):upper(),
+        model   = model,
+        owner   = owner,
+        garage  = garage,
+        state   = stored and 1 or 0,
+        impound = impound,
+    }
+end
+
+---A plate as the mirror keys it: upper-cased, spaces dropped.
+---@param plate any
+---@return string
+local function plateKey(plate)
+    return (str(plate):upper():gsub('%s', ''))
+end
+
+---@class AiFleetEntry
+---@field plate string the plate as ai-vehicles holds it
+---@field key string plateKey(plate)
+---@field model string upper-cased model name, '' when ai-vehicles had none
+
+---@type table<string, AiFleetEntry> Mirror of the vehicles ai-vehicles holds in memory, by plate key.
+---Seeded once from GetPlateOwners and kept current from its `ai-vehicles:owners` event, the way its
+---key systems mirror it, so a search never copies the whole list across or asks per vehicle.
+local fleet = {}
+
+---@type AiFleetEntry[]|nil The mirror sorted by plate, rebuilt on the first search after a change.
+local fleetSorted
+
+---Adds a plate to the mirror. Its model is read once, when the plate enters; an owner change keeps it.
+---@param plate any
+local function fleetPut(plate)
+    local key = plateKey(plate)
+    if key == '' or fleet[key] then return end
+
+    local v = aiVehicles('GetVehicle', plate)
+    fleet[key] = { plate = plate, key = key, model = type(v) == 'table' and str(v.model):upper() or '' }
+    fleetSorted = nil
+end
+
+---Fills the mirror from ai-vehicles' snapshot, yielding now and then so a large fleet does not
+---stall the server tick.
+local function fleetSeed()
+    local rows = aiVehicles('GetPlateOwners') or {}
+    for i, row in ipairs(rows) do
+        if type(row) == 'table' then fleetPut(row[1]) end
+        if i % 200 == 0 then Wait(0) end
+    end
+end
+
+if aicore then
+    CreateThread(function()
+        if GetResourceState('ai-vehicles') == 'started' then fleetSeed() end
+    end)
+
+    ---ai-vehicles' mirror feed: `puts` are `[plate, ownerType, ownerId]` rows that entered memory or
+    ---changed owner, `removes` the plates that left memory. One batch per tick.
+    AddEventHandler('ai-vehicles:owners', function(puts, removes)
+        for _, row in ipairs(type(puts) == 'table' and puts or {}) do
+            if type(row) == 'table' then fleetPut(row[1]) end
+        end
+        for _, plate in ipairs(type(removes) == 'table' and removes or {}) do
+            fleet[plateKey(plate)] = nil
+        end
+        fleetSorted = nil
+    end)
+
+    AddEventHandler('onResourceStart', function(resource)
+        if resource ~= 'ai-vehicles' then return end
+        fleet, fleetSorted = {}, nil
+        CreateThread(fleetSeed)
+    end)
+
+    AddEventHandler('onResourceStop', function(resource)
+        if resource == 'ai-vehicles' then fleet, fleetSorted = {}, nil end
+    end)
+end
+
+---The mirror sorted by plate.
+---@return AiFleetEntry[]
+local function sortedFleet()
+    if fleetSorted then return fleetSorted end
+
+    fleetSorted = {}
+    for _, entry in pairs(fleet) do fleetSorted[#fleetSorted + 1] = entry end
+    table.sort(fleetSorted, function(a, b) return a.key < b.key end)
+    return fleetSorted
+end
+
+---A page of AI Core vehicles. ai-vehicles holds the vehicles of the characters it has loaded and
+---answers one stored vehicle by its exact plate, with no search over everything stored, so a search
+---matches the mirrored loaded vehicles by plate or model and adds an exact plate match from
+---storage; a browse pages the loaded ones. Only the rows shown are read from ai-vehicles.
+---@param term string
+---@param browse boolean
+---@param limit integer
+---@param offset integer
+---@return table[] vehicles
+---@return integer total
+local function aiSearchVehicles(term, browse, limit, offset)
+    local needle = plateKey(term)
+    local model  = str(term):upper()
+
+    local hits, exact = {}, false
+    for _, entry in ipairs(sortedFleet()) do
+        local byPlate = entry.key:find(needle, 1, true) ~= nil
+        local byModel = entry.model ~= '' and entry.model:find(model, 1, true) ~= nil
+        if browse or byPlate or byModel then
+            hits[#hits + 1] = { plate = entry.plate }
+            if entry.key == needle then exact = true end
+        end
+    end
+
+    if not browse and not exact then
+        local v = aicore.awaitOn('ai-vehicles', 'FindVehicle', term, aicore.ANSWER, 'framework')
+        if type(v) == 'table' then hits[#hits + 1] = { plate = str(v.plate), v = v } end
+    end
+
+    local out = {}
+    for i = offset + 1, math.min(#hits, offset + limit) do
+        local v = hits[i].v or aiVehicles('GetVehicle', hits[i].plate, 'framework')
+        if type(v) == 'table' then out[#out + 1] = aiVehicle(v) end
+    end
+    return out, #hits
+end
+
 ---One vehicle by plate, or nil. The plate is matched case- and space-insensitively because the
 ---framework stores it exactly as the game formatted it. Read-only.
 ---@param plate string
@@ -441,6 +735,11 @@ end
 function records.vehicleByPlate(plate)
     plate = str(plate):upper()
     if plate == '' then return nil end
+
+    if aicore then
+        local v = aicore.awaitOn('ai-vehicles', 'FindVehicle', plate, aicore.ANSWER, 'framework')
+        return type(v) == 'table' and aiVehicle(v) or nil
+    end
 
     local row = MySQL.single.await(
         ('SELECT * FROM `%s` WHERE REPLACE(UPPER(plate), " ", "") = ? LIMIT 1'):format(VEHICLES.table),
@@ -454,6 +753,18 @@ end
 ---@return table[] vehicles
 function records.vehiclesByOwner(cid)
     if type(cid) ~= 'string' or cid == '' then return {} end
+
+    if aicore then
+        local owner = aicore.vehicleOwner(cid)
+        local list = owner and aicore.awaitOn('ai-vehicles', 'GetVehiclesOf', owner, aicore.ANSWER, 'framework')
+        local out = {}
+        for _, v in ipairs(type(list) == 'table' and list or {}) do
+            if type(v) == 'table' then out[#out + 1] = aiVehicle(v, cid) end
+        end
+        table.sort(out, function(a, b) return a.plate < b.plate end)
+        while #out > 60 do out[#out] = nil end
+        return out
+    end
 
     local rows = MySQL.query.await(
         ('SELECT * FROM `%s` WHERE `%s` = ? ORDER BY plate ASC LIMIT 60'):format(VEHICLES.table, VEHICLES.idCol),
@@ -477,6 +788,8 @@ function records.searchVehicles(term, page, pageSize)
     local limit  = math.max(1, math.floor(tonumber(pageSize) or 25))
     local offset = math.max(0, (math.max(1, math.floor(tonumber(page) or 1)) - 1) * limit)
     local like   = '%' .. term:gsub('([%%_\\])', '\\%1') .. '%'
+
+    if aicore then return aiSearchVehicles(term, #term < MIN_TERM, limit, offset) end
 
     local modelCol = modelColumn()
     local where, args = '', {}

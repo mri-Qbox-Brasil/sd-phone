@@ -94,13 +94,13 @@ export function ContentPage({ app, searchPlaceholder, emptyLabel, deleteBody, th
     return (
         <div className="space-y-4">
             <div className="flex gap-2">
-                <Input value={q} onChange={setQ} onEnter={submit} placeholder={`${searchPlaceholder} — press Enter`} />
+                <Input value={q} onChange={setQ} onEnter={submit} placeholder={`${searchPlaceholder}, press Enter`} />
                 <Btn variant="primary" onClick={submit} disabled={q.trim().length === 1}>Search</Btn>
             </div>
 
             {bulk.size > 0 && (
-                <div className="flex items-center justify-between gap-3 rounded-xl bg-ios-blue/10 px-4 py-2.5 ring-1 ring-ios-blue/25">
-                    <span className="text-[12.5px] font-semibold text-zinc-200">
+                <div className="flex items-center justify-between gap-3 rounded-lg bg-adm-surface-2 px-4 py-2.5 ring-1 ring-adm-hair-strong">
+                    <span className="text-[12.5px] font-semibold text-adm-1">
                         {bulk.size} selected
                     </span>
                     <div className="flex items-center gap-2">
@@ -120,8 +120,8 @@ export function ContentPage({ app, searchPlaceholder, emptyLabel, deleteBody, th
                                 <div
                                     key={item.id}
                                     className={clsx(
-                                        'overflow-hidden rounded-xl bg-white/[0.035] ring-1 transition-colors',
-                                        item.id === selectedId ? 'ring-ios-blue/60' : 'ring-white/[0.06]',
+                                        'overflow-hidden rounded-lg bg-adm-surface ring-1 transition-colors',
+                                        item.id === selectedId ? 'ring-adm-focus' : 'ring-adm-hair',
                                     )}
                                 >
                                     <button
@@ -144,11 +144,11 @@ export function ContentPage({ app, searchPlaceholder, emptyLabel, deleteBody, th
                                         >
                                             <div className="flex items-center gap-1.5">
                                                 <OnlineDot online={item.authorOnline} />
-                                                <span className="truncate text-[12px] font-semibold text-zinc-200 hover:underline">
+                                                <span className="truncate text-[12px] font-semibold text-adm-1 hover:underline">
                                                     {item.authorName ?? item.authorCid ?? 'Unknown'}
                                                 </span>
                                             </div>
-                                            <div className="text-[10.5px] text-zinc-500">{fmtTime(item.createdAt)}</div>
+                                            <div className="text-[10.5px] text-adm-3">{fmtTime(item.createdAt)}</div>
                                         </button>
                                         {deletable && (
                                             <Btn variant="danger" title="Delete photo" onClick={() => setDoomed(item.id)}>
@@ -168,8 +168,8 @@ export function ContentPage({ app, searchPlaceholder, emptyLabel, deleteBody, th
                                         key={item.id}
                                         onClick={() => setSelectedId(active ? null : item.id)}
                                         className={clsx(
-                                            'cursor-pointer border-t border-white/[0.05] px-4 py-3 transition-colors first:border-t-0',
-                                            active ? 'bg-ios-blue/[0.10]' : 'hover:bg-white/[0.03]',
+                                            'cursor-pointer border-t border-adm-hair px-4 py-3 transition-colors first:border-t-0',
+                                            active ? 'bg-adm-surface-3' : 'hover:bg-adm-surface-2',
                                         )}
                                     >
                                         <div className="flex items-start justify-between gap-3">
@@ -183,23 +183,23 @@ export function ContentPage({ app, searchPlaceholder, emptyLabel, deleteBody, th
                                                     {item.authorCid ? (
                                                         <span className="inline-flex items-center gap-1.5">
                                                             <OnlineDot online={item.authorOnline} />
-                                                            <span className="font-bold text-zinc-100">{item.authorName ?? 'Unknown player'}</span>
-                                                            <span className="font-mono text-[11px] text-zinc-500">{item.authorCid}</span>
+                                                            <span className="font-semibold text-adm-1">{item.authorName ?? 'Unknown player'}</span>
+                                                            <span className="font-mono text-[11px] text-adm-3">{item.authorCid}</span>
                                                         </span>
                                                     ) : (
-                                                        <span className="font-semibold text-zinc-400">Unknown author</span>
+                                                        <span className="font-semibold text-adm-2">Unknown author</span>
                                                     )}
                                                     {item.label && <Badge>{item.label}</Badge>}
                                                     {item.kind && item.kind !== 'text' && <Badge tone="blue">{item.kind}</Badge>}
-                                                    <span className="text-zinc-600">·</span>
-                                                    <span className="text-zinc-500">{fmtTime(item.createdAt)}</span>
+                                                    <span className="text-adm-4">·</span>
+                                                    <span className="text-adm-3">{fmtTime(item.createdAt)}</span>
                                                 </div>
-                                                {item.title && <div className="mt-1 text-[13px] font-bold text-zinc-100">{item.title}</div>}
-                                                <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-200">
-                                                    {item.body || <span className="italic text-zinc-500">(no text)</span>}
+                                                {item.title && <div className="mt-1 text-[13px] font-semibold text-adm-1">{item.title}</div>}
+                                                <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-snug text-adm-1">
+                                                    {item.body || <span className="italic text-adm-3">(no text)</span>}
                                                 </div>
                                                 <MediaStrip media={item.media} className="mt-2" onOpen={i => openMedia(item, i)} />
-                                                <div className="mt-1.5 flex items-center gap-4 text-[11.5px] text-zinc-500">
+                                                <div className="mt-1.5 flex items-center gap-4 text-[11.5px] text-adm-3">
                                                     {typeof item.price === 'number' && <span>${item.price.toLocaleString()}</span>}
                                                     <Stat icon={<Heart size={12} />} value={item.likes} />
                                                     <Stat icon={<MessageCircle size={12} />} value={item.comments} />
@@ -263,7 +263,7 @@ export function ContentPage({ app, searchPlaceholder, emptyLabel, deleteBody, th
                     index={lightbox.index}
                     onIndex={i => setLightbox(prev => prev && { ...prev, index: i })}
                     onClose={() => setLightbox(null)}
-                    caption={<span className="font-semibold text-zinc-200">{lightbox.who}</span>}
+                    caption={<span className="font-semibold text-adm-1">{lightbox.who}</span>}
                 />
             )}
 

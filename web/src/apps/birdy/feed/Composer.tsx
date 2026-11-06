@@ -60,7 +60,11 @@ export function Composer({ me, onClose, onPost }: {
     }
 
     function togglePoll() {
-        if (pollOptions) { setPollClosing(true); return; }
+        if (pollOptions) {
+            if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setPollOptions(null);
+            else setPollClosing(true);
+            return;
+        }
         setPollClosing(false);
         setPollOptions(['', '']);
         setImages([]);
@@ -146,126 +150,128 @@ export function Composer({ me, onClose, onPost }: {
                 </button>
             </header>
 
-            <div className="flex min-h-0 flex-1 gap-3 overflow-y-auto no-scrollbar px-4 pt-3">
-                <Avatar size={40} src={me.avatar} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <textarea
-                        ref={taRef}
-                        value={text}
-                        onChange={e => setText(e.target.value)}
-                        onFocus={() => setEmojiOpen(false)}
-                        maxLength={MAX_POST_LENGTH}
-                        placeholder={t('squawk.whatsHappening', "What's on your mind?")}
-                        className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-label outline-none placeholder:font-semibold placeholder:text-ios-gray"
-                        style={{ caretColor: BLUE, outline: 'none', boxShadow: 'none' }}
-                    />
+            <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pt-3">
+                <div className="flex gap-3">
+                    <Avatar size={40} src={me.avatar} />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        <textarea
+                            ref={taRef}
+                            value={text}
+                            onChange={e => setText(e.target.value)}
+                            onFocus={() => setEmojiOpen(false)}
+                            maxLength={MAX_POST_LENGTH}
+                            placeholder={t('squawk.whatsHappening', "What's on your mind?")}
+                            className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-label outline-none placeholder:font-semibold placeholder:text-ios-gray"
+                            style={{ caretColor: BLUE, outline: 'none', boxShadow: 'none' }}
+                        />
 
-                    {images.length > 0 && (
-                        <div className="mb-3 mt-1 flex gap-2">
-                            {images.map((url, i) => (
-                                <div key={`${url}-${i}`} className="relative min-w-0 flex-1">
-                                    <img src={url} alt="" draggable={false} className="h-[240px] w-full rounded-[14px] object-cover" />
+                        {images.length > 0 && (
+                            <div className="mb-3 mt-1 flex gap-2">
+                                {images.map((url, i) => (
+                                    <div key={`${url}-${i}`} className="relative min-w-0 flex-1">
+                                        <img src={url} alt="" draggable={false} className="h-[240px] w-full rounded-[14px] object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => removeImage(i)}
+                                            aria-label={t('squawk.removeImage', 'Remove image')}
+                                            className="absolute end-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 active:opacity-70"
+                                        >
+                                            <X className="h-[16px] w-[16px] text-white" strokeWidth={2.6} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {pollOptions && (
+                    <div
+                        className="sq-poll grid"
+                        style={{ animation: pollClosing
+                            ? 'sq-poll-out 0.24s cubic-bezier(0.32,0,0.68,1) forwards'
+                            : 'sq-poll-in 0.32s cubic-bezier(0.32,0.72,0,1) both' }}
+                        onAnimationEnd={e => {
+                            if (!pollClosing || e.animationName !== 'sq-poll-out') return;
+                            setPollOptions(null);
+                            setPollClosing(false);
+                        }}
+                    >
+                        <div className="overflow-hidden">
+                            <div className="mb-3 mt-1 rounded-[18px] p-3.5" style={{ background: CARD, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
+                                <div className="mb-3 flex items-center justify-between">
+                                    <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: BLUE }}>
+                                        <BarChart2 className="h-[14px] w-[14px] -rotate-90" strokeWidth={3} />
+                                        {t('squawk.pollLabel', 'Poll')}
+                                    </span>
                                     <button
                                         type="button"
-                                        onClick={() => removeImage(i)}
-                                        aria-label={t('squawk.removeImage', 'Remove image')}
-                                        className="absolute end-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 active:opacity-70"
+                                        onClick={togglePoll}
+                                        aria-label={t('squawk.pollRemove', 'Remove poll')}
+                                        className="flex h-[26px] w-[26px] items-center justify-center rounded-full active:bg-hairline/10"
+                                        style={{ color: META }}
                                     >
-                                        <X className="h-[16px] w-[16px] text-white" strokeWidth={2.6} />
+                                        <X className="h-[16px] w-[16px]" strokeWidth={2.6} />
                                     </button>
                                 </div>
-                            ))}
-                        </div>
-                    )}
 
-                    {pollOptions && (
-                        <div
-                            className="sq-poll grid"
-                            style={{ animation: pollClosing
-                                ? 'sq-poll-out 0.24s cubic-bezier(0.32,0,0.68,1) forwards'
-                                : 'sq-poll-in 0.32s cubic-bezier(0.32,0.72,0,1) both' }}
-                            onAnimationEnd={e => {
-                                if (!pollClosing || e.animationName !== 'sq-poll-out') return;
-                                setPollOptions(null);
-                                setPollClosing(false);
-                            }}
-                        >
-                            <div className="overflow-hidden">
-                                <div className="mb-3 mt-1 rounded-[18px] p-3.5" style={{ background: CARD, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
-                                    <div className="mb-3 flex items-center justify-between">
-                                        <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: BLUE }}>
-                                            <BarChart2 className="h-[14px] w-[14px] -rotate-90" strokeWidth={3} />
-                                            {t('squawk.pollLabel', 'Poll')}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={togglePoll}
-                                            aria-label={t('squawk.pollRemove', 'Remove poll')}
-                                            className="flex h-[26px] w-[26px] items-center justify-center rounded-full active:bg-hairline/10"
-                                            style={{ color: META }}
-                                        >
-                                            <X className="h-[16px] w-[16px]" strokeWidth={2.6} />
-                                        </button>
-                                    </div>
-
-                                    <div className="flex flex-col gap-2">
-                                        {pollOptions.map((value, i) => (
-                                            <div key={i} className="flex items-center gap-2.5">
-                                                <span
-                                                    className="flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-full text-[12px] font-bold tabular-nums"
-                                                    style={{ background: 'rgb(var(--ios-blue) / 0.12)', color: BLUE }}
+                                <div className="flex flex-col gap-2">
+                                    {pollOptions.map((value, i) => (
+                                        <div key={i} className="flex items-center gap-2.5">
+                                            <span
+                                                className="flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-full text-[12px] font-bold tabular-nums"
+                                                style={{ background: 'rgb(var(--ios-blue) / 0.12)', color: BLUE }}
+                                            >
+                                                {i + 1}
+                                            </span>
+                                            <input
+                                                value={value}
+                                                onChange={e => setOption(i, e.target.value)}
+                                                maxLength={MAX_POLL_OPTION_LENGTH}
+                                                placeholder={t('squawk.pollOptionN', 'Choice {n}', { n: i + 1 })}
+                                                className="min-w-0 flex-1 rounded-[12px] px-3.5 py-2.5 text-[16px] text-label outline-none placeholder:text-ios-gray"
+                                                style={{ background: BG, caretColor: BLUE }}
+                                            />
+                                            {pollOptions.length > 2 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeOption(i)}
+                                                    aria-label={t('squawk.pollRemoveOption', 'Remove choice')}
+                                                    className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full active:bg-hairline/10"
+                                                    style={{ color: META }}
                                                 >
-                                                    {i + 1}
-                                                </span>
-                                                <input
-                                                    value={value}
-                                                    onChange={e => setOption(i, e.target.value)}
-                                                    maxLength={MAX_POLL_OPTION_LENGTH}
-                                                    placeholder={t('squawk.pollOptionN', 'Choice {n}', { n: i + 1 })}
-                                                    className="min-w-0 flex-1 rounded-[12px] px-3.5 py-2.5 text-[16px] text-label outline-none placeholder:text-ios-gray"
-                                                    style={{ background: BG, caretColor: BLUE }}
-                                                />
-                                                {pollOptions.length > 2 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeOption(i)}
-                                                        aria-label={t('squawk.pollRemoveOption', 'Remove choice')}
-                                                        className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full active:bg-hairline/10"
-                                                        style={{ color: META }}
-                                                    >
-                                                        <X className="h-[17px] w-[17px]" strokeWidth={2.4} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {pollOptions.length < MAX_POLL_OPTIONS && (
-                                        <button
-                                            type="button"
-                                            onClick={addOption}
-                                            className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[15px] font-semibold active:opacity-60"
-                                            style={{ color: BLUE, border: '1px dashed rgb(var(--ios-blue) / 0.35)' }}
-                                        >
-                                            <Plus className="h-[16px] w-[16px]" strokeWidth={2.8} />
-                                            {t('squawk.pollAddOption', 'Add a choice')}
-                                        </button>
-                                    )}
-
-                                    <p className="mb-2 mt-4 text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: META }}>
-                                        {t('squawk.pollLength', 'Poll length')}
-                                    </p>
-                                    <SegmentedControl
-                                        value={pollDuration}
-                                        onChange={setPollDuration}
-                                        options={durations}
-                                        slide
-                                    />
+                                                    <X className="h-[17px] w-[17px]" strokeWidth={2.4} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
+
+                                {pollOptions.length < MAX_POLL_OPTIONS && (
+                                    <button
+                                        type="button"
+                                        onClick={addOption}
+                                        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[15px] font-semibold active:opacity-60"
+                                        style={{ color: BLUE, border: '1px dashed rgb(var(--ios-blue) / 0.35)' }}
+                                    >
+                                        <Plus className="h-[16px] w-[16px]" strokeWidth={2.8} />
+                                        {t('squawk.pollAddOption', 'Add a choice')}
+                                    </button>
+                                )}
+
+                                <p className="mb-2 mt-4 text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: META }}>
+                                    {t('squawk.pollLength', 'Poll length')}
+                                </p>
+                                <SegmentedControl
+                                    value={pollDuration}
+                                    onChange={setPollDuration}
+                                    options={durations}
+                                    slide
+                                />
                             </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {emojiOpen && <EmojiPanel isDark={isDark} onSelect={e => setText(t => t + e)} />}

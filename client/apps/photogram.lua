@@ -18,8 +18,8 @@ end)
 local ACTIONS = {
     'feed', 'explore', 'post', 'create', 'deletePost', 'toggleLike', 'toggleSave', 'saved',
     'comments', 'addComment', 'toggleCommentLike', 'profile', 'profilePosts', 'updateProfile',
-    'toggleFollow', 'respondFollow', 'followRequests', 'followList', 'search',
-    'stories', 'addStory', 'markStorySeen', 'activity', 'counts', 'dismissNotification',
+    'toggleFollow', 'shareProfile', 'respondFollow', 'followRequests', 'followList', 'search',
+    'stories', 'userStories', 'addStory', 'deleteStory', 'markStorySeen', 'activity', 'counts', 'dismissNotification',
     'dmList', 'dmThread', 'dmSend', 'dmReact', 'deleteAccount', 'watch',
     'liveStart', 'liveJoin', 'liveLeave', 'liveEnd', 'liveComment', 'liveHeart', 'liveTransport',
 }
@@ -53,6 +53,19 @@ end)
 -- Server live pushes relayed 1:1 into the React app: activity ping, new DM, DM reaction.
 RegisterNetEvent('sd-phone:client:photogram:notification', function(payload)
     SendNUIMessage({ action = 'sd-phone:photogram:notification', data = payload })
+end)
+
+---Server push after an accepted profile AirShare: opens Photogram on that profile. The launch
+---link covers a Photogram that is not mounted yet; the NUI event covers one that already is.
+---@param handle string profile to open
+RegisterNetEvent('sd-phone:client:photogram:openProfile', function(handle)
+    if type(handle) ~= 'string' or handle == '' then return end
+    exports['sd-phone']:openApp('photogram', {
+        ['photogram:viewHandle'] = handle,
+        ['photogram:dmOpen'] = false, ['photogram:commentId'] = false,
+        ['photogram:detail'] = false, ['photogram:follows'] = false, ['photogram:createOpen'] = false,
+    })
+    SendNUIMessage({ action = 'sd-phone:photogram:openProfile', data = { handle = handle } })
 end)
 
 RegisterNetEvent('sd-phone:client:photogram:dmReceived', function(payload)

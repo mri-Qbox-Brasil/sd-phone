@@ -67,7 +67,7 @@ export function AudioPlayer({ src, className }: { src: string; className?: strin
     return (
         <div
             className={clsx(
-                'flex w-full items-center gap-3 rounded-xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/[0.07]',
+                'flex w-full items-center gap-3 rounded-lg bg-adm-surface-2 px-3 py-2.5 ring-1 ring-adm-hair',
                 className,
             )}
             onMouseDown={e => e.stopPropagation()}
@@ -90,7 +90,7 @@ export function AudioPlayer({ src, className }: { src: string; className?: strin
             <button
                 type="button"
                 onClick={toggle}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ios-blue/15 text-[#6db4ff] transition-colors hover:bg-ios-blue/25"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-adm-1 transition-colors hover:bg-white/[0.14]"
                 title={playing ? 'Pause' : 'Play'}
             >
                 {playing
@@ -106,9 +106,9 @@ export function AudioPlayer({ src, className }: { src: string; className?: strin
                 onPointerCancel={endScrub}
                 className={clsx('relative h-4 min-w-0 flex-1 touch-none', total ? 'cursor-pointer' : 'cursor-default')}
             >
-                <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-white/10" />
+                <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-adm-surface-3" />
                 <div
-                    className="absolute start-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-[#6db4ff]"
+                    className="absolute start-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-adm-1"
                     style={{ width: `${pct}%` }}
                 />
                 <div
@@ -117,7 +117,7 @@ export function AudioPlayer({ src, className }: { src: string; className?: strin
                 />
             </div>
 
-            <span className="shrink-0 tabular-nums text-[11.5px] text-zinc-500">
+            <span className="shrink-0 tabular-nums text-[11.5px] text-adm-3">
                 {clock(at)} / {clock(total || NaN)}
             </span>
         </div>

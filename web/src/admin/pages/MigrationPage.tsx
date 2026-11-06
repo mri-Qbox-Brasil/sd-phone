@@ -171,12 +171,12 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
                     ))}
                 </div>
                 {activeSource && (
-                    <p className="mt-3 text-[12.5px] leading-relaxed text-zinc-400">
+                    <p className="mt-3 text-[12.5px] leading-relaxed text-adm-2">
                         {activeSource.blurb}
                     </p>
                 )}
                 {!anySourcePresent && (
-                    <p className="mt-2 text-[12.5px] leading-relaxed text-ios-orange">
+                    <p className="mt-2 text-[12.5px] leading-relaxed text-adm-warn">
                         Neither source is present in this database. Load the old phone&apos;s tables alongside sd-phone&apos;s, then scan again.
                     </p>
                 )}
@@ -207,7 +207,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
             <label
                 className={clsx(
                     'flex items-center gap-1.5 text-[12px]',
-                    running ? 'text-zinc-600' : 'cursor-pointer text-zinc-400',
+                    running ? 'text-adm-4' : 'cursor-pointer text-adm-2',
                 )}
             >
                 <Checkbox checked={dryRun} disabled={running} onChange={setDryRun} />
@@ -251,12 +251,12 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
                         {picked.length} domain{picked.length === 1 ? '' : 's'}, roughly{' '}
                         {duration(pickedRows / 8000)}.
                     </div>
-                    <div className="rounded-lg bg-ios-orange/10 px-3.5 py-2.5 text-amber-300">
+                    <div className="rounded-lg bg-adm-warn/[0.12] px-3.5 py-2.5 text-adm-warn">
                         The server does this work in one go, so expect it to run heavy the whole
                         time: players may see lag, and the phone will be slow to answer. Best done
                         with nobody on.
                     </div>
-                    <div className="text-zinc-400">
+                    <div className="text-adm-2">
                         {dryRun
                             ? 'Counting only. Nothing is written and no domain is marked done.'
                             : 'You can stop it at any point. Domains that finished stay finished.'}
@@ -268,7 +268,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
 
     const heading = (
         <span className="flex items-center gap-2">
-            <Database size={15} className="text-zinc-500" />
+            <Database size={15} className="text-adm-3" />
             {sourceTitle} import
             <Badge tone={PHASE_TONE[state.phase] ?? 'neutral'}>{PHASE_LABEL[state.phase] ?? state.phase}</Badge>
             {state.dryRun && <Badge tone="amber">Counting only</Badge>}
@@ -276,31 +276,31 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
     );
 
     const overall = started && (
-        <div className="border-t border-white/[0.06] px-4 py-3">
+        <div className="border-t border-adm-hair px-4 py-3">
             <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[12px]">
-                <span className="font-semibold text-zinc-300">
+                <span className="font-semibold text-adm-2">
                     {state.currentDomain
                         ? `${STAGE_LABEL[state.currentStage ?? 'building']} ${state.currentDomain}`
                         : PHASE_LABEL[state.phase] ?? state.phase}
                     {state.currentStage === 'writing' && (state.writeTotal ?? 0) > 0 && (
-                        <span className="ms-2 font-mono font-normal text-zinc-500 tabular-nums">
+                        <span className="ms-2 font-mono font-normal text-adm-3 tabular-nums">
                             {comma(state.writeDone ?? 0)} of {comma(state.writeTotal ?? 0)} rows written
                         </span>
                     )}
                 </span>
-                <span className="font-mono text-zinc-500 tabular-nums">
+                <span className="font-mono text-adm-3 tabular-nums">
                     {comma(state.doneRows ?? 0)} of {comma(state.totalRows ?? 0)}
                     {eta !== null && ` · ${duration(eta)} left`}
                 </span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+            <div className="h-1.5 overflow-hidden rounded-full bg-adm-surface-2">
                 <div
                     className={clsx(
                         'h-full rounded-full transition-[width] duration-500 ease-out',
-                        state.phase === 'failed' ? 'bg-ios-red'
-                            : state.phase === 'cancelled' ? 'bg-ios-orange'
-                            : state.phase === 'done' ? 'bg-ios-green'
-                            : 'bg-ios-blue',
+                        state.phase === 'failed' ? 'bg-adm-danger'
+                            : state.phase === 'cancelled' ? 'bg-adm-warn'
+                            : state.phase === 'done' ? 'bg-adm-ok'
+                            : 'bg-adm-1',
                     )}
                     style={{ width: `${pct}%` }}
                 />
@@ -355,7 +355,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
                         <div
                             className={clsx(
                                 'flex items-start gap-2.5 rounded-lg px-3.5 py-2.5 text-[12.5px] leading-relaxed',
-                                unmatchedPct >= 25 ? 'bg-ios-red/10 text-red-300' : 'bg-ios-orange/10 text-amber-300',
+                                unmatchedPct >= 25 ? 'bg-adm-danger/[0.12] text-adm-danger' : 'bg-adm-warn/[0.12] text-adm-warn',
                             )}
                         >
                             <AlertTriangle size={14} className="mt-[2px] shrink-0" />
@@ -376,7 +376,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
                 title="Domains"
                 actions={
                     <div className="flex items-center gap-3">
-                        <span className="font-mono text-[11.5px] text-zinc-500 tabular-nums">
+                        <span className="font-mono text-[11.5px] text-adm-3 tabular-nums">
                             {picked.length} of {selectable.length} available selected
                         </span>
                         <Btn
@@ -401,7 +401,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
                     locked={running}
                     onToggle={toggle}
                 />
-                <div className="border-t border-white/[0.06] px-4 py-2.5 text-[11.5px] text-zinc-500">
+                <div className="border-t border-adm-hair px-4 py-2.5 text-[11.5px] text-adm-3">
                     Re-running a domain only fills gaps. Nobody's existing data is overwritten.
                 </div>
             </Card>
@@ -419,12 +419,12 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'amber' }) {
     return (
-        <div className="rounded-lg bg-white/[0.03] px-3.5 py-2.5 ring-1 ring-white/[0.05]">
-            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-zinc-500">{label}</div>
+        <div className="rounded-lg bg-adm-surface px-3.5 py-2.5 ring-1 ring-adm-hair">
+            <div className="text-[10.5px] font-semibold text-adm-3">{label}</div>
             <div
                 className={clsx(
-                    'mt-0.5 font-mono text-[17px] font-bold leading-tight tabular-nums',
-                    tone === 'green' ? 'text-ios-green' : tone === 'amber' ? 'text-ios-orange' : 'text-zinc-200',
+                    'mt-0.5 font-mono text-[17px] font-semibold leading-tight tabular-nums',
+                    tone === 'green' ? 'text-adm-ok' : tone === 'amber' ? 'text-adm-warn' : 'text-adm-1',
                 )}
             >
                 {value}

@@ -185,24 +185,7 @@ html, body, #root {
                 fill             0.3s ease,
                 stroke           0.3s ease !important;
 }
-@keyframes admin-toast { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spotlight-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.animate-admin-toast { animation: admin-toast 0.22s ease; }
-/* Admin panel scroll areas: slim rounded thumb on a transparent track, matching the dark theme. */
-.admin-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
-.admin-scroll::-webkit-scrollbar-track { background: transparent; }
-.admin-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
-    border-radius: 8px;
-    border: 3px solid transparent;
-    background-clip: padding-box;
-}
-.admin-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.26);
-    border: 3px solid transparent;
-    background-clip: padding-box;
-}
-.admin-scroll::-webkit-scrollbar-corner { background: transparent; }
 @keyframes screenshot-flash { 0% { opacity: 0; } 12% { opacity: 0.95; } 100% { opacity: 0; } }
 .animate-screenshot-flash { animation: screenshot-flash 0.5s ease-out forwards; }
 @keyframes photo-in  { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
@@ -244,43 +227,6 @@ html, body, #root {
 
 @keyframes phone-peek-in  { from { transform: translateY(118%); } to { transform: translateY(85%); } }
 @keyframes phone-peek-out { from { transform: translateY(85%);  } to { transform: translateY(118%); } }
-
-/* The staff panel opens on the phone's own centre curve, so a terminal and a
-   device arriving on screen feel like the same system. The scrim fades on the
-   same clock rather than snapping in behind the card. */
-@keyframes admin-in {
-    from { transform: scale(0.88); opacity: 0; }
-    to   { transform: scale(1);    opacity: 1; }
-}
-@keyframes admin-scrim-in { from { opacity: 0; } to { opacity: 1; } }
-
-.admin-panel-in { animation: admin-in 0.52s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.admin-scrim-in { animation: admin-scrim-in 0.32s ease-out both; }
-
-/* A dialog inside the panel arrives on the same curve as the panel itself, just quicker: it is a
-   smaller thing landing on top of something already there, and matching the full 0.52s would read
-   as sluggish. Leaving is faster still, the way a dismissal should be. */
-@keyframes admin-dialog-in {
-    from { transform: scale(0.94); opacity: 0; }
-    to   { transform: scale(1);    opacity: 1; }
-}
-@keyframes admin-dialog-out {
-    from { transform: scale(1);    opacity: 1; }
-    to   { transform: scale(0.96); opacity: 0; }
-}
-@keyframes admin-scrim-out { from { opacity: 1; } to { opacity: 0; } }
-
-.admin-dialog-in   { animation: admin-dialog-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.admin-dialog-out  { animation: admin-dialog-out 0.16s ease-in both; }
-.admin-scrim-out   { animation: admin-scrim-out 0.16s ease-in both; }
-
-@media (prefers-reduced-motion: reduce) {
-    .admin-panel-in,
-    .admin-scrim-in,
-    .admin-dialog-in,
-    .admin-dialog-out,
-    .admin-scrim-out { animation: none; }
-}
 
 @keyframes boot-rise {
     from { opacity: 0; transform: translateY(14px) scale(0.92); }

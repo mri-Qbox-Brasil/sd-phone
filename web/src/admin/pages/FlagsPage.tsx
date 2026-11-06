@@ -1,10 +1,9 @@
 import { useCallback, useState } from 'react';
 import { ArrowUpRight, Check, Search, Undo2, UserSearch, X } from 'lucide-react';
-import clsx from 'clsx';
 
 import { adminFlagResolve, adminFlags, adminFlagsScan } from '../adminApi';
 import { fmtTime, type AdminFlag, type AdminFlagStatus } from '../types';
-import { Badge, Btn, Card, CenterNote, LoadMore, OnlineDot, Spinner } from '../ui';
+import { Badge, Btn, Card, CenterNote, LoadMore, OnlineDot, Segment, Spinner } from '../ui';
 import { usePaged } from '../usePaged';
 
 const APP_LABEL: Record<string, string> = {
@@ -26,7 +25,7 @@ function Excerpt({ text, matched }: { text: string; matched: string }) {
     return (
         <>
             {text.slice(0, at)}
-            <mark className="rounded bg-amber-400/25 px-0.5 text-amber-200">{text.slice(at, at + matched.length)}</mark>
+            <mark className="rounded bg-adm-warn/[0.12] px-0.5 text-adm-warn">{text.slice(at, at + matched.length)}</mark>
             {text.slice(at + matched.length)}
         </>
     );
@@ -75,23 +74,7 @@ export function FlagsPage({ onOpenPlayer, onOpenContent, onCount, toast }: {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-                <div className="flex gap-2">
-                    {TABS.map(t => (
-                        <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => setStatus(t.id)}
-                            className={clsx(
-                                'rounded-lg px-3 py-1.5 text-[12px] font-semibold ring-1 transition-colors',
-                                status === t.id
-                                    ? 'bg-white/[0.12] text-zinc-100 ring-white/[0.14]'
-                                    : 'bg-white/[0.035] text-zinc-400 ring-white/[0.06] hover:bg-white/[0.06]',
-                            )}
-                        >
-                            {t.label}
-                        </button>
-                    ))}
-                </div>
+                <Segment value={status} options={TABS} onChange={setStatus} />
                 <Btn variant="primary" onClick={() => void scan()} busy={scanning} disabled={scanning}>
                     <Search size={13} /> Scan now
                 </Btn>
@@ -99,7 +82,7 @@ export function FlagsPage({ onOpenPlayer, onOpenContent, onCount, toast }: {
 
             <Card>
                 {items.map(flag => (
-                    <div key={flag.id} className="border-t border-white/[0.05] px-4 py-3 first:border-t-0">
+                    <div key={flag.id} className="border-t border-adm-hair px-4 py-3 first:border-t-0">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px]">
@@ -108,21 +91,21 @@ export function FlagsPage({ onOpenPlayer, onOpenContent, onCount, toast }: {
                                     {flag.authorCid ? (
                                         <span className="inline-flex items-center gap-1.5">
                                             <OnlineDot online={flag.authorOnline} />
-                                            <span className="font-bold text-zinc-100">{flag.authorName ?? 'Unknown player'}</span>
-                                            <span className="font-mono text-[11px] text-zinc-500">{flag.authorCid}</span>
+                                            <span className="font-semibold text-adm-1">{flag.authorName ?? 'Unknown player'}</span>
+                                            <span className="font-mono text-[11px] text-adm-3">{flag.authorCid}</span>
                                         </span>
                                     ) : (
-                                        <span className="font-semibold text-zinc-400">Unknown author</span>
+                                        <span className="font-semibold text-adm-2">Unknown author</span>
                                     )}
-                                    <span className="text-zinc-600">·</span>
-                                    <span className="text-zinc-500">{fmtTime(flag.createdAt)}</span>
+                                    <span className="text-adm-4">·</span>
+                                    <span className="text-adm-3">{fmtTime(flag.createdAt)}</span>
                                     {flag.status !== 'open' && (
                                         <Badge tone={flag.status === 'actioned' ? 'green' : 'neutral'}>
                                             {flag.status} by {flag.handledName ?? 'staff'}
                                         </Badge>
                                     )}
                                 </div>
-                                <div className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-200">
+                                <div className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-snug text-adm-1">
                                     <Excerpt text={flag.excerpt} matched={flag.matched} />
                                 </div>
                             </div>
@@ -164,8 +147,8 @@ export function FlagsPage({ onOpenPlayer, onOpenContent, onCount, toast }: {
                 <LoadMore onClick={loadMore} loading={loading} hasMore={hasMore} />
             </Card>
 
-            <Card className="p-4 text-[12.5px] leading-relaxed text-zinc-500">
-                <span className="font-semibold text-zinc-400">How this works.</span> A sweep reads recent posts, texts and
+            <Card className="p-4 text-[12.5px] leading-relaxed text-adm-3">
+                <span className="font-semibold text-adm-2">How this works.</span> A sweep reads recent posts, texts and
                 listings across the apps and files anything matching a rule in configs/moderation.lua. Nothing is hidden or
                 removed automatically: a flag is a queue entry, and what happens next is your call. Marking one actioned or
                 dismissed closes it and writes an audit row.

@@ -5,8 +5,9 @@ import { t } from '@/i18n';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { type Post } from '../data';
 import { MediaThumb } from '../create/Media';
-import { apiSaved, type ProfileView } from '../photogramApi';
+import { apiSaved, type ProfileView, type StoryGroup } from '../photogramApi';
 import { VerifiedCheck } from '../ui';
+import { StoryAvatar } from '../stories/StoryAvatar';
 
 export function fmtCount(n: number): string {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'm';
@@ -16,12 +17,15 @@ export function fmtCount(n: number): string {
 
 type Grid = 'posts' | 'saved';
 
-export function Profile({ profile, posts, onEdit, onOpenPost, onOpenFollows }: {
+export function Profile({ profile, posts, story, onEdit, onShare, onOpenPost, onOpenFollows, onOpenStory }: {
     profile:       ProfileView;
     posts:         Post[];
+    story:         StoryGroup | null;
     onEdit:        () => void;
+    onShare:       () => void;
     onOpenPost:    (p: Post) => void;
     onOpenFollows: (handle: string, kind: 'followers' | 'following') => void;
+    onOpenStory:   (story: StoryGroup) => void;
 }) {
     const [grid,  setGrid]  = useState<Grid>('posts');
     const { data: saved, loading } = useAsyncData(apiSaved, [grid], { enabled: grid === 'saved' });
@@ -40,7 +44,7 @@ export function Profile({ profile, posts, onEdit, onOpenPost, onOpenFollows }: {
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
                 <div className="flex items-center gap-6 px-4 py-3">
-                    <img src={profile.avatar} alt="" draggable={false} className="h-[108px] w-[108px] rounded-full object-cover" />
+                    <StoryAvatar src={profile.avatar} story={story} onOpen={onOpenStory} />
                     <div className="flex flex-1 justify-around text-center">
                         <Stat n={profile.posts} label={t('photogram.posts', 'Posts')} />
                         <Stat n={fmtCount(profile.followers)} label={t('photogram.followers', 'Followers')} onClick={() => onOpenFollows(profile.username, 'followers')} />
@@ -55,7 +59,7 @@ export function Profile({ profile, posts, onEdit, onOpenPost, onOpenFollows }: {
 
                 <div className="flex gap-2.5 px-4 pb-3">
                     <button type="button" onClick={onEdit} className="flex-1 rounded-[12px] bg-black/[0.06] py-3 text-[19px] font-semibold text-black active:opacity-70">{t('photogram.editProfile', 'Edit profile')}</button>
-                    <button type="button" className="flex-1 rounded-[12px] bg-black/[0.06] py-3 text-[19px] font-semibold text-black active:opacity-70">{t('photogram.shareProfile', 'Share profile')}</button>
+                    <button type="button" onClick={onShare} className="flex-1 rounded-[12px] bg-black/[0.06] py-3 text-[19px] font-semibold text-black active:opacity-70">{t('photogram.shareProfile', 'Share profile')}</button>
                 </div>
 
                 {profile.isMe ? (

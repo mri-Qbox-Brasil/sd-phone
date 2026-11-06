@@ -65,7 +65,7 @@ export function Activity({ items, requests, onRespond, onOpenProfile, onOpenPost
                                 <button type="button" onClick={() => n.postId && onOpenPost(n.postId)} className="shrink-0 active:opacity-80">
                                     <img src={n.thumb} alt="" draggable={false} className="h-[66px] w-[66px] rounded-[4px] object-cover" />
                                 </button>
-                            ) : (n.kind === 'follow' || n.kind === 'follow_accept') ? (
+                            ) : (n.kind === 'follow' || n.kind === 'follow_accept' || n.kind === 'story_mention') ? (
                                 <button type="button" onClick={() => onOpenProfile(n.user.handle)} className="shrink-0 rounded-[10px] px-5 py-2.5 text-[17px] font-semibold text-white active:opacity-80" style={{ background: IG.blue }}>
                                     {t('photogram.view', 'View')}
                                 </button>

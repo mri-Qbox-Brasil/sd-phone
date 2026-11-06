@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-    AudioLines, Bird, Camera, Clapperboard, DatabaseZap, FileText, Flag, Flame, Hash, Images, LayoutDashboard, Mail, Map,
-    MessageSquare, Mic, Newspaper, Rss, ScrollText, Search, ShieldCheck, ShoppingBag, Skull, StickyNote,
-    Trash2, TriangleAlert, Users, VolumeX, X,
+    AudioLines, Bird, Camera, Clapperboard, FileText, Flag, Flame, Images, Mail, MessageSquare, Mic, Newspaper, Rss,
+    ShoppingBag, Skull, StickyNote, Users, X,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -24,78 +23,48 @@ import { RacingPage } from './pages/RacingPage';
 import { PlayerDetail } from './pages/PlayerDetail';
 import { PlayersPage } from './pages/PlayersPage';
 import { ToastHost, closeTopmostOverlay, useToasts } from './ui';
+import './admin.css';
 
-type PageId =
-    | 'dashboard' | 'media' | 'map' | 'players' | 'numbers' | 'flags' | 'mutes' | 'bin' | 'audit' | 'migration' | 'birdy'
-    | 'messages' | 'darkchat' | 'photogram' | 'vibez' | 'cherry' | 'marketplace' | 'pages' | 'gallery' | 'racing'
-    | 'mail' | 'documents' | 'weazelnews' | 'notes' | 'voicememos' | 'groups' | 'callrecordings';
+type TabId = 'overview' | 'players' | 'apps' | 'media' | 'map' | 'flags' | 'mutes' | 'bin' | 'audit' | 'numbers' | 'migration';
 
-interface NavItem { id: PageId; label: string; icon: React.ReactNode }
+type AppId =
+    | 'birdy' | 'messages' | 'mail' | 'darkchat' | 'photogram' | 'vibez' | 'cherry' | 'marketplace' | 'pages'
+    | 'weazelnews' | 'documents' | 'notes' | 'voicememos' | 'callrecordings' | 'groups' | 'gallery' | 'racing';
 
-const NAV_MAIN: NavItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={15} /> },
-    { id: 'media',     label: 'Media',     icon: <Images size={15} /> },
-    { id: 'map',       label: 'Live map',  icon: <Map size={15} /> },
-    { id: 'players',   label: 'Players',   icon: <Search size={15} /> },
-    { id: 'numbers',   label: 'Numbers',   icon: <Hash size={15} /> },
-    { id: 'flags',     label: 'Flags',     icon: <TriangleAlert size={15} /> },
-    { id: 'mutes',     label: 'Mutes',     icon: <VolumeX size={15} /> },
-    { id: 'bin',       label: 'Recycle bin', icon: <Trash2 size={15} /> },
-    { id: 'audit',     label: 'Audit log', icon: <ScrollText size={15} /> },
-    { id: 'migration', label: 'Migration', icon: <DatabaseZap size={15} /> },
+const TABS: { id: TabId; label: string; heading: string; sub: string }[] = [
+    { id: 'overview',  label: 'Overview',    heading: 'Overview',    sub: 'Activity across every phone' },
+    { id: 'players',   label: 'Players',     heading: 'Players',     sub: 'Search anyone by name, number or account' },
+    { id: 'apps',      label: 'Apps',        heading: 'Apps',        sub: 'Moderate what players post' },
+    { id: 'media',     label: 'Media',       heading: 'Media',       sub: 'Everything posted, newest first' },
+    { id: 'map',       label: 'Live map',    heading: 'Live map',    sub: 'Players online now' },
+    { id: 'flags',     label: 'Flags',       heading: 'Flags',       sub: 'Watchlist queue' },
+    { id: 'mutes',     label: 'Mutes',       heading: 'Mutes',       sub: 'Active mutes' },
+    { id: 'bin',       label: 'Recycle bin', heading: 'Recycle bin', sub: 'Restore deleted content' },
+    { id: 'audit',     label: 'Audit log',   heading: 'Audit log',   sub: 'Every staff action' },
+    { id: 'numbers',   label: 'Numbers',     heading: 'Numbers',     sub: 'SIM registry' },
+    { id: 'migration', label: 'Migration',   heading: 'Migration',   sub: 'Import from another phone' },
 ];
 
-const NAV_APPS: NavItem[] = [
-    { id: 'birdy',       label: 'Squawk',      icon: <Bird size={15} /> },
-    { id: 'messages',    label: 'Messages',    icon: <MessageSquare size={15} /> },
-    { id: 'mail',        label: 'Mail',        icon: <Mail size={15} /> },
-    { id: 'darkchat',    label: 'Dark Chat',   icon: <Skull size={15} /> },
-    { id: 'photogram',   label: 'Photogram',   icon: <Camera size={15} /> },
-    { id: 'vibez',       label: 'Clout',       icon: <Clapperboard size={15} /> },
-    { id: 'cherry',      label: 'Cherry',      icon: <Flame size={15} /> },
-    { id: 'marketplace', label: 'Marketplace', icon: <ShoppingBag size={15} /> },
-    { id: 'pages',       label: 'Pages',       icon: <Newspaper size={15} /> },
-    { id: 'weazelnews',  label: 'Weazel News', icon: <Rss size={15} /> },
-    { id: 'documents',   label: 'Documents',   icon: <FileText size={15} /> },
-    { id: 'notes',       label: 'Notes',       icon: <StickyNote size={15} /> },
-    { id: 'voicememos',  label: 'Voice memos', icon: <Mic size={15} /> },
-    { id: 'callrecordings', label: 'Call recordings', icon: <AudioLines size={15} /> },
-    { id: 'groups',      label: 'Groups',      icon: <Users size={15} /> },
-    { id: 'gallery',     label: 'Gallery',     icon: <Images size={15} /> },
-    { id: 'racing',      label: 'Racing',      icon: <Flag size={15} /> },
+const APPS: { id: AppId; label: string; sub: string; icon: React.ReactNode }[] = [
+    { id: 'birdy',          label: 'Squawk',          sub: 'Posts and accounts',             icon: <Bird size={14} /> },
+    { id: 'messages',       label: 'Messages',        sub: 'Read only',                      icon: <MessageSquare size={14} /> },
+    { id: 'mail',           label: 'Mail',            sub: 'Mailboxes and their messages',   icon: <Mail size={14} /> },
+    { id: 'darkchat',       label: 'Dark Chat',       sub: 'Rooms and messages',             icon: <Skull size={14} /> },
+    { id: 'photogram',      label: 'Photogram',       sub: 'Posts, comments and likes',      icon: <Camera size={14} /> },
+    { id: 'vibez',          label: 'Clout',           sub: 'Posts, comments and likes',      icon: <Clapperboard size={14} /> },
+    { id: 'cherry',         label: 'Cherry',          sub: 'Profiles',                       icon: <Flame size={14} /> },
+    { id: 'marketplace',    label: 'Marketplace',     sub: 'Listings',                       icon: <ShoppingBag size={14} /> },
+    { id: 'pages',          label: 'Pages',           sub: 'Posts',                          icon: <Newspaper size={14} /> },
+    { id: 'weazelnews',     label: 'Weazel News',     sub: 'Published articles',             icon: <Rss size={14} /> },
+    { id: 'documents',      label: 'Documents',       sub: 'Files and who signed them',      icon: <FileText size={14} /> },
+    { id: 'notes',          label: 'Notes',           sub: 'Read only',                      icon: <StickyNote size={14} /> },
+    { id: 'voicememos',     label: 'Voice memos',     sub: 'Recordings',                     icon: <Mic size={14} /> },
+    { id: 'callrecordings', label: 'Call recordings', sub: 'Recorded calls',                 icon: <AudioLines size={14} /> },
+    { id: 'groups',         label: 'Groups',          sub: 'Crews and their members',        icon: <Users size={14} /> },
+    { id: 'gallery',        label: 'Gallery',         sub: 'Player photos',                  icon: <Images size={14} /> },
+    { id: 'racing',         label: 'Racing',          sub: 'Track board',                    icon: <Flag size={14} /> },
 ];
 
-const PAGE_TITLE: Record<PageId, string> = {
-    dashboard:   'Dashboard',
-    media:       'Media - everything posted',
-    map:         'Live map - players online now',
-    players:     'Players',
-    numbers:     'Numbers — SIM registry',
-    flags:       'Flags — watchlist queue',
-    bin:         'Recycle bin — restore deleted content',
-    birdy:       'Squawk moderation',
-    mutes:       'Active mutes',
-    audit:       'Audit log',
-    migration:   'Migration - import from another phone',
-    messages:    'Messages (read-only)',
-    darkchat:    'Dark Chat moderation',
-    photogram:   'Photogram moderation',
-    vibez:       'Clout moderation',
-    cherry:      'Cherry profiles',
-    marketplace: 'Marketplace moderation',
-    pages:       'Pages moderation',
-    gallery:     'Gallery — player photos',
-    racing:      'Racing — track board',
-    mail:        'Mail — mailboxes and their messages',
-    documents:   'Documents — files and who signed them',
-    weazelnews:  'Weazel News — published articles',
-    notes:       'Notes (read-only)',
-    voicememos:  'Voice memos',
-    callrecordings: 'Call recordings',
-    groups:      'Groups',
-};
-
-// Per-app config for the generic content browser.
 const CONTENT_PAGES: Record<string, { search: string; empty: string; deleteBody: string; thread: string; grid?: boolean }> = {
     messages:    { search: 'Filter sent texts by content or number',      empty: 'No messages yet.',            deleteBody: '',                                                             thread: 'Conversation' },
     darkchat:    { search: 'Filter messages by content, alias or room',   empty: 'No Dark Chat messages yet.',  deleteBody: 'The message goes to the Recycle bin for 30 days. Its reactions do not come back.',       thread: 'Room context' },
@@ -114,207 +83,268 @@ const CONTENT_PAGES: Record<string, { search: string; empty: string; deleteBody:
     groups:      { search: 'Filter groups by name or leader',             empty: 'No groups yet.',              deleteBody: '',                                                             thread: '' },
 };
 
+const isTyping = () => {
+    const el = document.activeElement as HTMLElement | null;
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+};
+
 export function AdminPanel() {
-    // Open on the first paint in the website's admin view, so the panel is what
-    // renders rather than something that appears a moment after the phone.
     const [open, setOpen] = useState(demoAdminOnly);
+    const [leaving, setLeaving] = useState(false);
     const [adminName, setAdminName] = useState<string | undefined>(demoAdminOnly ? 'Demo Admin' : undefined);
     const [simEnabled, setSimEnabled] = useState(false);
     const [racingEnabled, setRacingEnabled] = useState(demoAdminOnly);
-    const [page, setPage] = useState<PageId>('dashboard');
+    const [tab, setTab] = useState<TabId>('overview');
+    const [app, setApp] = useState<AppId>('birdy');
     const [playerCid, setPlayerCid] = useState<string | null>(null);
     const [searchSeed, setSearchSeed] = useState('');
+    const [gallerySeed, setGallerySeed] = useState('');
+    const [contentSeed, setContentSeed] = useState<{ app: string; q: string } | null>(null);
+    const [openFlags, setOpenFlags] = useState(0);
     const { toasts, push } = useToasts();
+
+    const tabs = TABS.filter(t => t.id !== 'numbers' || simEnabled);
+    const apps = APPS.filter(a => a.id !== 'racing' || racingEnabled);
 
     useNuiEvent('sd-phone:admin:open', useCallback((data) => {
         setAdminName(data?.adminName);
         setSimEnabled(data?.sim === true);
         setRacingEnabled(data?.racing === true);
-        setPage('dashboard');
+        setTab('overview');
         setPlayerCid(null);
         setSearchSeed('');
+        setLeaving(false);
         setOpen(true);
     }, []));
 
     const close = useCallback(() => {
-        setOpen(false);
         void fetchNui('sd-phone:admin:close');
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setOpen(false);
+        else setLeaving(true);
     }, []);
 
-    // Capture-phase Escape so the phone's own Escape handler (close phone) never
-    // fires while the panel is on top. It is also the panel's only Escape owner:
-    // capture listeners fire in registration order, so an overlay mounted later
-    // could never see the key. Overlays register a closer instead, and the
-    // topmost one takes the press before the panel itself closes.
+    const switchTab = useCallback((next: TabId) => {
+        setTab(next);
+        if (next !== 'players') setPlayerCid(null);
+    }, []);
+
+    const openApp = useCallback((next: AppId) => {
+        setApp(next);
+        if (next === 'gallery') setGallerySeed('');
+        if (next !== contentSeed?.app) setContentSeed(null);
+    }, [contentSeed]);
+
     useEffect(() => {
-        if (!open) return;
+        if (!open || leaving) return;
         const onKey = (e: KeyboardEvent) => {
-            if (e.key !== 'Escape') return;
-            e.stopImmediatePropagation();
-            if (closeTopmostOverlay()) return;
-            close();
+            if (e.key === 'Escape') {
+                e.stopImmediatePropagation();
+                if (closeTopmostOverlay()) return;
+                close();
+                return;
+            }
+            if (e.ctrlKey || e.altKey || e.metaKey || isTyping() || document.querySelector('[data-modal]')) return;
+            const n = Number(e.key);
+            if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, tabs.length)) switchTab(tabs[n - 1].id);
         };
         window.addEventListener('keydown', onKey, true);
         return () => window.removeEventListener('keydown', onKey, true);
-    }, [open, close]);
+    }, [open, leaving, close, switchTab, tabs]);
 
     const openPlayer = useCallback((cid: string) => {
-        setPage('players');
+        setTab('players');
         setPlayerCid(cid);
     }, []);
 
-    // Jump to the Gallery pre-filtered to one player's photos (uploads + camera shots).
-    const [gallerySeed, setGallerySeed] = useState('');
     const openGallery = useCallback((cid: string) => {
         setGallerySeed(cid);
-        setPage('gallery');
+        setApp('gallery');
+        setTab('apps');
     }, []);
 
-    const [contentSeed, setContentSeed] = useState<{ app: string; q: string } | null>(null);
-    const openContent = useCallback((app: string, q: string) => {
-        setContentSeed({ app, q });
-        setPage(app as PageId);
+    const openContent = useCallback((target: string, q: string) => {
+        setContentSeed({ app: target, q });
+        setApp(target as AppId);
+        setTab('apps');
     }, []);
 
-    const [openFlags, setOpenFlags] = useState(0);
+    const enter = useRef<{ tab: TabId; cls: string }>({ tab, cls: '' });
+    if (enter.current.tab !== tab) {
+        const from = tabs.findIndex(t => t.id === enter.current.tab);
+        const to = tabs.findIndex(t => t.id === tab);
+        enter.current = { tab, cls: to > from ? 'adm-anim-tab-right' : 'adm-anim-tab-left' };
+    }
+
+    const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
+    const [underline, setUnderline] = useState<{ left: number; width: number } | null>(null);
+    useLayoutEffect(() => {
+        const el = tabRefs.current[tab];
+        if (!el) return;
+        setUnderline({ left: el.offsetLeft + 10, width: Math.max(0, el.offsetWidth - 20) });
+    }, [tab, open, openFlags, simEnabled]);
 
     if (!open) return null;
 
-    const renderNavItem = (item: NavItem) => {
-        const active = page === item.id;
-        return (
-            <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                    setPage(item.id);
-                    if (item.id !== 'players') setPlayerCid(null);
-                    if (item.id === 'gallery') setGallerySeed('');
-                    if (item.id !== contentSeed?.app) setContentSeed(null);
-                }}
-                className={clsx(
-                    'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors',
-                    active ? 'bg-ios-blue/15 text-[#6db4ff]' : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200',
-                )}
-            >
-                {item.icon}
-                {item.label}
-                {item.id === 'flags' && openFlags > 0 && (
-                    <span className="ms-auto rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[10.5px] font-bold tabular-nums text-amber-300">
-                        {openFlags}
-                    </span>
-                )}
-            </button>
-        );
-    };
+    const counts: Partial<Record<TabId, number>> = { flags: openFlags || undefined };
+    const current = TABS.find(t => t.id === tab) ?? TABS[0];
+    const currentApp = apps.find(a => a.id === app) ?? apps[0];
+    const contentCfg = CONTENT_PAGES[currentApp.id];
 
-    const contentCfg = CONTENT_PAGES[page];
+    const heading = tab === 'players' && playerCid
+        ? { title: 'Player details', sub: playerCid }
+        : tab === 'apps'
+            ? { title: currentApp.label, sub: currentApp.sub }
+            : { title: current.heading, sub: current.sub };
+
+    const appBody = (
+        <>
+            {currentApp.id === 'birdy' && (
+                <BirdyPage
+                    key={contentSeed?.app === 'birdy' ? `birdy:${contentSeed.q}` : 'birdy'}
+                    initialQuery={contentSeed?.app === 'birdy' ? contentSeed.q : undefined}
+                    onOpenPlayer={openPlayer}
+                    toast={push}
+                />
+            )}
+            {currentApp.id === 'racing' && <RacingPage onToast={push} />}
+            {contentCfg && (
+                <ContentPage
+                    key={currentApp.id === 'gallery'
+                        ? `gallery:${gallerySeed}`
+                        : contentSeed?.app === currentApp.id ? `${currentApp.id}:${contentSeed.q}` : currentApp.id}
+                    app={currentApp.id}
+                    initialQuery={currentApp.id === 'gallery'
+                        ? gallerySeed
+                        : contentSeed?.app === currentApp.id ? contentSeed.q : undefined}
+                    searchPlaceholder={contentCfg.search}
+                    emptyLabel={contentCfg.empty}
+                    deleteBody={contentCfg.deleteBody}
+                    threadLabel={contentCfg.thread}
+                    grid={contentCfg.grid}
+                    onOpenPlayer={openPlayer}
+                    toast={push}
+                />
+            )}
+        </>
+    );
 
     return (
         <div
-            className="admin-scrim-in fixed inset-0 z-[400] flex items-center justify-center p-6 font-sf"
-            onMouseDown={demoAdminOnly ? undefined : close}
+            className={clsx(
+                'sd-admin fixed inset-0 z-[400] flex items-center justify-center',
+                leaving ? 'adm-anim-fade-out' : 'adm-anim-fade-in',
+                demoAdminOnly ? 'p-6' : 'bg-black/45',
+            )}
+            onAnimationEnd={e => {
+                if (!leaving || e.target !== e.currentTarget) return;
+                setLeaving(false);
+                setOpen(false);
+            }}
         >
-            {/* No backdrop-filter here: FiveM's CEF can't sample the game feed behind a
-                transparent NUI page, so backdrop-blur paints a huge black region instead.
-                In the website's admin view there is nothing behind it either, so the panel
-                fills the frame instead of floating at a capped size: the padding above is
-                the same 24px inset the device chassis sits at, which keeps it clear of the
-                bench's registration marks. */}
             <div
                 data-admin-surface
                 dir="ltr"
-                className={`admin-panel-in relative flex overflow-hidden bg-[#101114] ${
+                className={clsx(
+                    'relative flex flex-col overflow-hidden border border-adm-hair-strong bg-adm-bg',
+                    leaving ? 'adm-anim-panel-out' : 'adm-anim-panel-in',
                     demoAdminOnly
-                        ? 'h-full w-full rounded-xl'
-                        : 'h-[min(780px,92vh)] w-[min(1180px,94vw)] rounded-2xl shadow-2xl ring-1 ring-white/10'
-                }`}
-                onMouseDown={e => e.stopPropagation()}
+                        ? 'h-full w-full rounded-[14px]'
+                        : 'h-[88vh] w-[1180px] max-w-[94vw] rounded-[14px] shadow-[0_30px_80px_rgba(0,0,0,0.55)]',
+                )}
             >
-                {/* Sidebar */}
-                <div className="flex w-52 shrink-0 flex-col border-e border-white/[0.06] bg-white/[0.02]">
-                    <div className="flex items-center gap-2.5 px-4 pb-4 pt-5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-ios-blue/20 text-ios-blue">
-                            <ShieldCheck size={17} />
-                        </div>
-                        <div>
-                            <div className="text-[13.5px] font-bold leading-tight text-zinc-100">Phone Admin</div>
-                            <div className="text-[11px] text-zinc-500">sd-phone</div>
-                        </div>
+                <div className="flex h-14 shrink-0 items-center gap-3 pe-3 ps-5">
+                    <div className="flex min-w-0 items-baseline gap-2.5">
+                        <span className="text-[14.5px] font-semibold tracking-[-0.01em] text-adm-1">Phone Admin</span>
+                        <span className="truncate text-[12.5px] text-adm-3">Players, content and moderation</span>
                     </div>
-                    <nav className="admin-scroll flex-1 space-y-0.5 overflow-y-auto px-2.5">
-                        {NAV_MAIN.filter(item => item.id !== 'numbers' || simEnabled).map(item => renderNavItem(item))}
-                        <div className="px-3 pb-1 pt-3 text-[10.5px] font-bold uppercase tracking-widest text-zinc-600">Apps</div>
-                        {NAV_APPS.filter(item => item.id !== 'racing' || racingEnabled).map(item => renderNavItem(item))}
-                    </nav>
-                    <div className="border-t border-white/[0.06] px-4 py-3 text-[11.5px] text-zinc-500">
-                        Signed in as<br /><span className="font-semibold text-zinc-300">{adminName ?? 'Admin'}</span>
+                    <div className="ms-auto flex items-center gap-2">
+                        <span className="flex h-6 items-center rounded-[6px] bg-white/[0.05] px-2 text-[12px] text-adm-2">
+                            {adminName ?? 'Admin'}
+                        </span>
+                        <button type="button" className="adm-btn adm-btn--icon" onClick={close} aria-label="Close" title="Close (Esc)">
+                            <X size={16} />
+                        </button>
                     </div>
                 </div>
 
-                {/* Main */}
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-5 py-3">
-                        <div className="text-[15px] font-bold text-zinc-100">
-                            {playerCid && page === 'players' ? 'Player details' : PAGE_TITLE[page]}
-                        </div>
+                <div className="relative flex shrink-0 items-center overflow-x-auto border-b border-adm-hair px-3 [scrollbar-width:none]">
+                    {tabs.map((t, i) => (
                         <button
+                            key={t.id}
                             type="button"
-                            onClick={close}
-                            title="Close (Esc)"
-                            className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                            ref={el => { tabRefs.current[t.id] = el; }}
+                            data-on={tab === t.id}
+                            title={i < 9 ? String(i + 1) : undefined}
+                            onClick={() => switchTab(t.id)}
+                            className="adm-tab"
                         >
-                            <X size={17} />
+                            {t.label}
+                            {counts[t.id] != null && <span className="adm-tab__count">{counts[t.id]}</span>}
                         </button>
-                    </div>
-                    <div className="admin-scroll min-h-0 flex-1 overflow-y-auto p-5">
-                        {page === 'dashboard' && (
-                            <Dashboard onSearch={q => { setSearchSeed(q); setPlayerCid(null); setPage('players'); }} />
+                    ))}
+                    {underline && (
+                        <span
+                            className="adm-tab-underline absolute -bottom-px h-[1.5px] rounded-full bg-adm-1"
+                            style={{ left: underline.left, width: underline.width }}
+                        />
+                    )}
+                </div>
+
+                <div className="relative min-h-0 flex-1 overflow-hidden">
+                    <div key={tab} className={clsx('absolute inset-0 flex', enter.current.cls)}>
+                        {tab === 'apps' && (
+                            <div className="adm-scroll w-[200px] shrink-0 space-y-0.5 overflow-y-auto border-e border-adm-hair p-3">
+                                {apps.map(a => (
+                                    <button
+                                        key={a.id}
+                                        type="button"
+                                        data-on={currentApp.id === a.id}
+                                        onClick={() => openApp(a.id)}
+                                        className="adm-rail-item"
+                                    >
+                                        {a.icon}
+                                        <span className="truncate">{a.label}</span>
+                                    </button>
+                                ))}
+                            </div>
                         )}
-                        {page === 'players' && !playerCid && (
-                            <PlayersPage initialQuery={searchSeed} onOpenPlayer={openPlayer} />
-                        )}
-                        {page === 'players' && playerCid && (
-                            <PlayerDetail cid={playerCid} onBack={() => setPlayerCid(null)} toast={push} onOpenGallery={openGallery} />
-                        )}
-                        {page === 'media' && <MediaPage onOpenPlayer={openPlayer} />}
-                        {page === 'map' && <MapPage onOpenPlayer={openPlayer} />}
-                        {page === 'numbers' && <NumbersPage onOpenPlayer={openPlayer} />}
-                        {page === 'birdy' && (
-                            <BirdyPage
-                                key={contentSeed?.app === 'birdy' ? `birdy:${contentSeed.q}` : 'birdy'}
-                                initialQuery={contentSeed?.app === 'birdy' ? contentSeed.q : undefined}
-                                onOpenPlayer={openPlayer}
-                                toast={push}
-                            />
-                        )}
-                        {page === 'mutes' && <MutesPage onOpenPlayer={openPlayer} toast={push} />}
-                        {page === 'audit' && <AuditPage onOpenPlayer={openPlayer} />}
-                        {page === 'bin' && <BinPage onOpenPlayer={openPlayer} toast={push} />}
-                        {page === 'flags' && (
-                            <FlagsPage
-                                onOpenPlayer={openPlayer}
-                                onOpenContent={openContent}
-                                onCount={setOpenFlags}
-                                toast={push}
-                            />
-                        )}
-                        {page === 'racing' && <RacingPage onToast={push} />}
-                        {page === 'migration' && <MigrationPage toast={push} />}
-                        {contentCfg && (
-                            <ContentPage
-                                key={page === 'gallery' ? `gallery:${gallerySeed}` : contentSeed?.app === page ? `${page}:${contentSeed.q}` : page}
-                                app={page}
-                                initialQuery={page === 'gallery' ? gallerySeed : contentSeed?.app === page ? contentSeed.q : undefined}
-                                searchPlaceholder={contentCfg.search}
-                                emptyLabel={contentCfg.empty}
-                                deleteBody={contentCfg.deleteBody}
-                                threadLabel={contentCfg.thread}
-                                grid={contentCfg.grid}
-                                onOpenPlayer={openPlayer}
-                                toast={push}
-                            />
-                        )}
+
+                        <div className="adm-scroll min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-5">
+                            {tab !== 'overview' && !(tab === 'players' && playerCid) && (
+                                <div className="mb-4 flex min-h-[30px] items-center gap-3">
+                                    <div className="adm-heading">
+                                        {heading.title}
+                                        <span className="text-[12.5px] font-normal text-adm-3">{heading.sub}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {tab === 'overview' && (
+                                <Dashboard onSearch={q => { setSearchSeed(q); setPlayerCid(null); setTab('players'); }} />
+                            )}
+                            {tab === 'players' && !playerCid && (
+                                <PlayersPage initialQuery={searchSeed} onOpenPlayer={openPlayer} />
+                            )}
+                            {tab === 'players' && playerCid && (
+                                <PlayerDetail cid={playerCid} onBack={() => setPlayerCid(null)} toast={push} onOpenGallery={openGallery} />
+                            )}
+                            {tab === 'apps' && <div key={currentApp.id} className="adm-anim-fade-in">{appBody}</div>}
+                            {tab === 'media' && <MediaPage onOpenPlayer={openPlayer} />}
+                            {tab === 'map' && <MapPage onOpenPlayer={openPlayer} />}
+                            {tab === 'numbers' && <NumbersPage onOpenPlayer={openPlayer} />}
+                            {tab === 'mutes' && <MutesPage onOpenPlayer={openPlayer} toast={push} />}
+                            {tab === 'audit' && <AuditPage onOpenPlayer={openPlayer} />}
+                            {tab === 'bin' && <BinPage onOpenPlayer={openPlayer} toast={push} />}
+                            {tab === 'flags' && (
+                                <FlagsPage
+                                    onOpenPlayer={openPlayer}
+                                    onOpenContent={openContent}
+                                    onCount={setOpenFlags}
+                                    toast={push}
+                                />
+                            )}
+                            {tab === 'migration' && <MigrationPage toast={push} />}
+                        </div>
                     </div>
                 </div>
 

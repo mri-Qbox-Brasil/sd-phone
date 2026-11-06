@@ -54,6 +54,7 @@ return {
     'phone_job_fires',
     'phone_job_invites',
     'phone_mail_accounts',
+    'phone_mail_pending',
     'phone_mail_saved_emails',
     'phone_mail_sessions',
     'phone_map_markers',

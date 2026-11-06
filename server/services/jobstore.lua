@@ -33,6 +33,14 @@ function store.ensureSchema()
             PRIMARY KEY (citizenid, job)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    -- Unique phones once keyed these rows by the phone's identity, which showed up in rosters as
+    -- a "sim:<number>" employee. A phone changes hands, so the rows cannot be handed back to a
+    -- character safely; the framework's own jobs re-seed each list on the next Jobs tab open.
+    for _, tbl in ipairs({ 'phone_saved_jobs', 'phone_job_invites', 'phone_job_fires' }) do
+        MySQL.update.await(('DELETE FROM %s WHERE citizenid LIKE ? OR citizenid LIKE ?'):format(tbl),
+            { 'sim:%', 'device:%' })
+    end
 end
 
 ---Queues an unemployment to apply on the player's next load (offline fire); idempotent.

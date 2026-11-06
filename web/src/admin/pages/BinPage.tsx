@@ -39,7 +39,7 @@ export function BinPage({ onOpenPlayer, toast }: {
         <div className="space-y-4">
             <Card>
                 {items.map(entry => (
-                    <div key={entry.id} className="border-t border-white/[0.05] px-4 py-3 first:border-t-0">
+                    <div key={entry.id} className="border-t border-adm-hair px-4 py-3 first:border-t-0">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px]">
@@ -47,22 +47,22 @@ export function BinPage({ onOpenPlayer, toast }: {
                                     {entry.authorCid ? (
                                         <span className="inline-flex items-center gap-1.5">
                                             <OnlineDot online={entry.authorOnline} />
-                                            <span className="font-bold text-zinc-100">{entry.authorName ?? 'Unknown player'}</span>
+                                            <span className="font-semibold text-adm-1">{entry.authorName ?? 'Unknown player'}</span>
                                         </span>
                                     ) : (
-                                        <span className="font-semibold text-zinc-400">Unknown author</span>
+                                        <span className="font-semibold text-adm-2">Unknown author</span>
                                     )}
-                                    <span className="text-zinc-600">·</span>
-                                    <span className="text-zinc-500">deleted by {entry.adminName ?? 'staff'} {fmtTime(entry.createdAt)}</span>
+                                    <span className="text-adm-4">·</span>
+                                    <span className="text-adm-3">deleted by {entry.adminName ?? 'staff'} {fmtTime(entry.createdAt)}</span>
                                     {entry.restoredAt && (
                                         <Badge tone="green">put back by {entry.restoredBy ?? 'staff'}</Badge>
                                     )}
                                 </div>
-                                <div className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-200">
-                                    {entry.excerpt || <span className="italic text-zinc-500">(no text)</span>}
+                                <div className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-[13px] leading-snug text-adm-1">
+                                    {entry.excerpt || <span className="italic text-adm-3">(no text)</span>}
                                 </div>
                                 {entry.lost && (
-                                    <div className="mt-1 text-[11.5px] text-zinc-500">
+                                    <div className="mt-1 text-[11.5px] text-adm-3">
                                         Putting this back does not bring back {entry.lost}.
                                     </div>
                                 )}

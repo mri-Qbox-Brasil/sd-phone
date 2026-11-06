@@ -12,6 +12,8 @@ local live      = require 'server.photogram.live'
 local moderation = require 'server.admin.moderation'
 ---@type table Media trust boundary: gallery/voice ownership and GIPHY host validation.
 local mediaGuard = require 'server.media.guard'
+---@type table AirShare core (server.share.core): nearby-target validation + the request/accept handshake.
+local share     = require 'server.share.core'
 ---@type table Watcher registry (server.watchers): shared with server.photogram.live and init.
 local watchers  = require('server.watchers').of('photogram')
 
@@ -27,6 +29,19 @@ local VALID_DMKIND = { text = true, image = true, gif = true, voice = true, post
 local REACTION_SET = { ['❤️'] = true, ['👍'] = true, ['👎'] = true, ['😂'] = true }
 ---@type integer Live (<24h) story frames one account may hold at once.
 local STORY_CAP    = 50
+---@type integer Longest photo or video story caption kept, in bytes (column is VARCHAR(500)).
+local STORY_CAPTION_MAX = 500
+---@type integer Longest text story kept, in bytes.
+local STORY_TEXT_MAX    = 2000
+---@type integer Photos or videos one share can add to a story at once, matching a post's limit.
+local STORY_BATCH_MAX   = 10
+---@type integer People one story frame may tag.
+local STORY_TAG_MAX     = 10
+---@type table<string, boolean> Text story background presets, mirroring STORY_BACKGROUNDS in
+---web/src/apps/photogram/stories/backgrounds.ts.
+local STORY_BACKGROUNDS = { sunset = true, ocean = true, forest = true, berry = true, night = true }
+---@type string Background a text story falls back to when the client sends an unknown preset.
+local STORY_DEFAULT_BG  = 'sunset'
 ---@type integer How long a like/follow notification suppresses an identical repeat (seconds).
 local NOTIF_DEDUPE = 3600
 
@@ -203,6 +218,7 @@ local function notifSuffix(kind, preview)
     if kind == 'like'           then return 'liked your photo.' end
     if kind == 'comment'        then return (preview and preview ~= '') and ('commented: "%s"'):format(preview) or 'commented with a GIF.' end
     if kind == 'mention'        then return 'mentioned you in a comment.' end
+    if kind == 'story_mention'  then return 'mentioned you in their story.' end
     if kind == 'follow'         then return 'started following you.' end
     if kind == 'follow_request' then return 'requested to follow you.' end
     if kind == 'follow_accept'  then return 'accepted your follow request.' end
@@ -832,6 +848,47 @@ function actions.toggleFollow(src, payload)
     return ok({ status = 'accepted' })
 end
 
+---Offers the viewer's own profile to a nearby player over AirShare; accepting it follows them.
+---@param src integer player server id
+---@param payload table { target: integer }
+---@return table result
+function actions.shareProfile(src, payload)
+    payload = type(payload) == 'table' and payload or {}
+    local acc = viewerAccount(src)
+    if not acc then return fail('photogram.notSigned', 'Not signed in') end
+    local me = ensureProfile(acc)
+    local sent, refusal = share.request(src, payload.target, 'photogram-profile', { handle = me.username }, { detail = me.username })
+    if not sent then return refusal end
+    return ok()
+end
+
+---AirShare delivery for 'photogram-profile': the recipient follows the shared account, accepted
+---outright because its owner offered it, and their phone opens on that profile.
+---@param targetSrc integer recipient server id
+---@param payload table { handle: string }
+---@return boolean delivered
+---@return string|nil reason recipient-facing refusal
+function actions.followFromShare(targetSrc, payload)
+    local owner = type(payload) == 'table' and store.getProfile(trim(payload.handle)) or nil
+    if not owner then return false, 'That Photogram account no longer exists.' end
+    local acc = viewerAccount(targetSrc)
+    if not acc then return false, 'Sign in to Photogram to follow them.' end
+    ensureProfile(acc)
+    if acc.username:lower() ~= owner.username:lower() then
+        local prior = store.followStatus(acc.username, owner.username)
+        if prior == 'pending' then
+            store.setFollowStatus(acc.username, owner.username, 'accepted')
+            store.deleteRequestNotification(owner.username, acc.username)
+            notify(owner.username, 'follow', acc.username, nil, nil)
+        elseif prior ~= 'accepted' then
+            store.addFollow(acc.username, owner.username, 'accepted', os.time())
+            notify(owner.username, 'follow', acc.username, nil, nil)
+        end
+    end
+    TriggerClientEvent('sd-phone:client:photogram:openProfile', targetSrc, owner.username)
+    return true
+end
+
 ---Owner accepts or declines a pending follow request. Accept upgrades the row and notifies the
 ---requester; decline deletes it. Either way the requester is pushed the new status.
 ---@param src integer player server id
@@ -913,6 +970,22 @@ end
 ---@type integer os.time() of the last global story prune (0 = never).
 local lastStoryPruneAt = 0
 
+---One story row as the frame the viewer plays: a media URL with its caption, or a text card.
+---@param row table phone_photogram_stories row
+---@return table frame { id, url, caption?, text?, bg? }
+local function storyFrame(row)
+    local text = row.body ~= nil and row.body ~= '' and row.body or nil
+    local tags = store.decodeJson(row.tags)
+    return {
+        id      = row.id,
+        url     = row.image,
+        caption = not text and row.caption ~= '' and row.caption or nil,
+        tags    = not text and #tags > 0 and tags or nil,
+        text    = text,
+        bg      = text and row.bg or nil,
+    }
+end
+
 ---The stories tray: active (<24h) stories from the viewer + accounts they follow, grouped per
 ---author and ordered mine-first, then unseen, then seen. Live sessions the viewer may watch ride along.
 ---@param src integer player server id
@@ -937,7 +1010,7 @@ function actions.stories(src)
             groups[row.author] = g
             order[#order + 1] = row.author
         end
-        g.frames[#g.frames + 1] = { id = row.id, url = row.image }
+        g.frames[#g.frames + 1] = storyFrame(row)
         if not seen[row.id] then g.seen = false end
     end
 
@@ -956,10 +1029,89 @@ function actions.stories(src)
     return ok({ stories = stories, hasOwn = mine ~= nil, lives = live.activeForViewer(acc.username) })
 end
 
----Publish a story frame: one http(s) image URL, capped at the column width. Its 24h lifetime is
----enforced at read/prune time (STORY_TTL), not stored on the row.
+---One profile's active stories as a single tray group, for the ring and viewer on a profile page.
+---Visible exactly when the post grid is (canView); `story` is absent when there is nothing to show.
 ---@param src integer player server id
----@param payload table { image: string }
+---@param payload table { handle?: string }
+---@return table result { story? }
+function actions.userStories(src, payload)
+    payload = type(payload) == 'table' and payload or {}
+    local acc = viewerAccount(src)
+    if not acc then return fail('photogram.notSigned', 'Not signed in') end
+    local target = trim(payload.handle)
+    if target == '' then target = acc.username else target = target:lower() end
+    local profile = store.getProfile(target)
+    if not profile or not canView(acc.username, profile) then return ok({ story = false }) end
+    local rows = store.activeStoriesBy(target, os.time() - STORY_TTL)
+    if #rows == 0 then return ok({ story = false }) end
+    local seen = store.seenStoryIds(acc.username)
+    local group = { user = userCard(rows[1]), isMe = target == acc.username, frames = {}, seen = true }
+    for _, row in ipairs(rows) do
+        group.frames[#group.frames + 1] = storyFrame(row)
+        if not seen[row.id] then group.seen = false end
+    end
+    return ok({ story = group })
+end
+
+---A raw tag list cut to STORY_TAG_MAX well-formed entries: a lowercase handle and a position as
+---fractions of the frame, clamped to it. Duplicate handles keep their first position.
+---@param raw any raw client `tags` list
+---@return table[] tags { handle, x, y }
+local function parseStoryTags(raw)
+    local out, seen = {}, {}
+    if type(raw) ~= 'table' then return out end
+    for i = 1, math.min(#raw, STORY_TAG_MAX) do
+        local tag = type(raw[i]) == 'table' and raw[i] or {}
+        local handle = trim(tag.handle):lower():sub(1, 64)
+        local x, y = tonumber(tag.x), tonumber(tag.y)
+        if handle ~= '' and not seen[handle] and util.finite(x) and util.finite(y) then
+            seen[handle] = true
+            out[#out + 1] = {
+                handle = handle,
+                x = math.floor(lib.math.clamp(x, 0, 1) * 1000 + 0.5) / 1000,
+                y = math.floor(lib.math.clamp(y, 0, 1) * 1000 + 0.5) / 1000,
+            }
+        end
+    end
+    return out
+end
+
+---The media frames of an addStory payload, in order: up to STORY_BATCH_MAX gallery photos or
+---videos, each with an optional caption and people tags. Items that fail the media guard and
+---tags naming no profile are dropped; kept tags carry the profile's own spelling of the handle.
+---@param cid string caller's framework character id
+---@param items any raw client `items` list
+---@return table[] frames { image, caption, tags }
+local function storyMediaFrames(cid, items)
+    local frames, handles = {}, {}
+    if type(items) ~= 'table' then return frames end
+    for i = 1, math.min(#items, STORY_BATCH_MAX) do
+        local item = type(items[i]) == 'table' and items[i] or {}
+        local image = mediaGuard.photo(cid, item.image)
+        if image then
+            local tags = parseStoryTags(item.tags)
+            for _, tag in ipairs(tags) do handles[#handles + 1] = tag.handle end
+            frames[#frames + 1] = { image = image, caption = util.limitedString(item.caption, STORY_CAPTION_MAX), tags = tags }
+        end
+    end
+    local known = {}
+    for username in pairs(store.profilesByUsernames(handles)) do known[username:lower()] = username end
+    for _, frame in ipairs(frames) do
+        local kept = {}
+        for _, tag in ipairs(frame.tags) do
+            local handle = known[tag.handle]
+            if handle then kept[#kept + 1] = { handle = handle, x = tag.x, y = tag.y } end
+        end
+        frame.tags = #kept > 0 and kept or nil
+    end
+    return frames
+end
+
+---Publish to the viewer's story: a batch of gallery photos or videos (each its own frame, in
+---order, each with an optional caption), or one text card on a STORY_BACKGROUNDS preset.
+---Frames expire after STORY_TTL; STORY_CAP bounds how many may be live at once.
+---@param src integer player server id
+---@param payload table { items: { image: string, caption: string|nil }[] } | { text: string, bg: string|nil }
 ---@return table result
 function actions.addStory(src, payload)
     local muted = moderation.guard(player.getIdentifier(src), 'photogram'); if muted then return muted end
@@ -968,14 +1120,41 @@ function actions.addStory(src, payload)
     if not acc then return fail('photogram.notSigned', 'Not signed in') end
     local slow = throttle(src, 'story'); if slow then return slow end
     ensureProfile(acc)
-    local image = mediaGuard.photo(player.getIdentifier(src), payload.image)
-    if not image then return fail('photogram.addPhoto', 'Add a photo') end
-    -- Frames expire on their own after STORY_TTL, so this caps the live window rather than the
-    -- account: a full tray drains back to zero a day later.
-    if store.countActiveStories(acc.username, os.time() - STORY_TTL) >= STORY_CAP then
-        return fail('photogram.storyFullToday', 'Your story is full for today')
+    local frames
+    if payload.text ~= nil then
+        local text = util.limitedString(payload.text, STORY_TEXT_MAX)
+        if not text then return fail('photogram.storyTextEmpty', 'Write something first') end
+        frames = { { image = '', body = text, bg = STORY_BACKGROUNDS[payload.bg] and payload.bg or STORY_DEFAULT_BG } }
+    else
+        frames = storyMediaFrames(player.getIdentifier(src), payload.items)
+        if #frames == 0 then return fail('photogram.addPhoto', 'Add a photo') end
     end
-    store.insertStory(store.newId(), acc.username, image, os.time())
+    local room = STORY_CAP - store.countActiveStories(acc.username, os.time() - STORY_TTL)
+    if room <= 0 then return fail('photogram.storyFullToday', 'Your story is full for today') end
+    if #frames > room then
+        return fail('photogram.storyRoomLeft', 'Your story only has room for {n} more today', { n = room })
+    end
+    local now, tagged = os.time(), {}
+    for i, frame in ipairs(frames) do
+        store.insertStory(store.newId(), acc.username, frame, now - (#frames - i))
+        for _, tag in ipairs(frame.tags or {}) do tagged[tag.handle] = true end
+    end
+    for handle in pairs(tagged) do notify(handle, 'story_mention', acc.username) end
+    return ok()
+end
+
+---Deletes one of the viewer's own story frames.
+---@param src integer player server id
+---@param payload table { storyId: string }
+---@return table result
+function actions.deleteStory(src, payload)
+    payload = type(payload) == 'table' and payload or {}
+    local acc = viewerAccount(src)
+    if not acc then return fail('photogram.notSigned', 'Not signed in') end
+    local row = store.getStoryRow(trim(payload.storyId))
+    if not row then return fail('photogram.storyNotFound', 'Story not found') end
+    if row.author ~= acc.username then return fail('photogram.notStory', 'Not your story') end
+    store.deleteStory(row.id)
     return ok()
 end
 

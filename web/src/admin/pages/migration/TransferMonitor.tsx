@@ -90,48 +90,48 @@ export function TransferMonitor({
             <div className="p-4">
                 <div className="mb-3 flex items-baseline justify-between gap-4">
                     <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+                        <div className="text-[11px] font-semibold text-adm-3">
                             Ready to move
                         </div>
-                        <div className="mt-1 font-mono text-[26px] font-bold leading-none text-zinc-100 tabular-nums">
+                        <div className="mt-1 font-mono text-[26px] font-semibold leading-none text-adm-1 tabular-nums">
                             {comma(totalPlanned)}
-                            <span className="ms-2 font-sf text-[13px] font-semibold text-zinc-500">rows</span>
+                            <span className="ms-2 font-sf text-[13px] font-semibold text-adm-3">rows</span>
                         </div>
                     </div>
-                    <div className="text-end text-[12px] text-zinc-500">
+                    <div className="text-end text-[12px] text-adm-3">
                         across {plan.length} domain{plan.length === 1 ? '' : 's'}
                     </div>
                 </div>
 
                 {totalPlanned > 0 ? (
                     <>
-                        <div className="flex h-3 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                        <div className="flex h-3 w-full overflow-hidden rounded-full bg-adm-surface-2">
                             {byWeight.map((d, i) => (
                                 <div
                                     key={d.key}
                                     title={`${d.label}: ${comma(d.rows)} rows`}
                                     style={{
                                         width:      `${(d.rows / totalPlanned) * 100}%`,
-                                        background: `rgb(var(--ios-blue) / ${Math.max(0.28, 1 - i * 0.11).toFixed(2)})`,
+                                        background: `rgb(var(--adm-text-1) / ${Math.max(0.28, 1 - i * 0.11).toFixed(2)})`,
                                     }}
                                 />
                             ))}
                         </div>
                         <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
                             {byWeight.slice(0, 7).map((d, i) => (
-                                <span key={d.key} className="flex items-center gap-1.5 text-[11.5px] text-zinc-400">
+                                <span key={d.key} className="flex items-center gap-1.5 text-[11.5px] text-adm-2">
                                     <span
                                         className="h-2 w-2 rounded-full"
-                                        style={{ background: `rgb(var(--ios-blue) / ${Math.max(0.28, 1 - i * 0.11).toFixed(2)})` }}
+                                        style={{ background: `rgb(var(--adm-text-1) / ${Math.max(0.28, 1 - i * 0.11).toFixed(2)})` }}
                                     />
                                     {d.label}
-                                    <span className="font-mono tabular-nums text-zinc-500">{compact(d.rows)}</span>
+                                    <span className="font-mono tabular-nums text-adm-3">{compact(d.rows)}</span>
                                 </span>
                             ))}
                         </div>
                     </>
                 ) : (
-                    <div className="rounded-lg bg-white/[0.03] px-3.5 py-3 text-[12.5px] text-zinc-400">
+                    <div className="rounded-lg bg-adm-surface px-3.5 py-3 text-[12.5px] text-adm-2">
                         Nothing selected. Tick the domains you want and this fills in.
                     </div>
                 )}
@@ -143,35 +143,35 @@ export function TransferMonitor({
         <div className="p-4">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
                 <div>
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold text-adm-3">
                         Transfer rate
                         {reading && (
-                            <span className="rounded bg-ios-blue/20 px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-[#8ecbff]">
+                            <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-adm-1">
                                 Reading {state.currentDomain ?? 'source'} from {sourceTitle}
                             </span>
                         )}
                         {state.currentStage === 'writing' && (state.writeTotal ?? 0) > 0 && (
-                            <span className="rounded bg-ios-blue/20 px-1.5 py-0.5 font-mono text-[10px] normal-case tracking-normal text-[#8ecbff] tabular-nums">
+                            <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] normal-case tracking-normal text-adm-1 tabular-nums">
                                 Writing {compact(state.writeDone ?? 0)} / {compact(state.writeTotal ?? 0)}
                             </span>
                         )}
                     </div>
                     <div className="mt-1 flex items-baseline gap-2">
-                        <span className="font-mono text-[26px] font-bold leading-none text-ios-blue tabular-nums">
+                        <span className="font-mono text-[26px] font-semibold leading-none text-adm-1 tabular-nums">
                             {comma(rate)}
                         </span>
-                        <span className="text-[13px] font-semibold text-zinc-500">rows/sec</span>
+                        <span className="text-[13px] font-semibold text-adm-3">rows/sec</span>
                     </div>
                 </div>
                 <div className="flex gap-6 text-end">
                     <Readout label="Moved" value={comma(state.doneRows ?? 0)} />
                     <Readout label="Peak" value={`${comma(peak)}/s`} />
                     <Readout label="Elapsed" value={duration(elapsed)} />
-                    <Readout label="Remaining" value={eta !== null ? duration(eta) : '—'} />
+                    <Readout label="Remaining" value={eta !== null ? duration(eta) : '-'} />
                 </div>
             </div>
 
-            <div className="relative w-full overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/[0.05]" style={{ height }}>
+            <div className="relative w-full overflow-hidden rounded-lg bg-black/30 ring-1 ring-adm-hair" style={{ height }}>
                 <svg
                     width="100%"
                     height={height}
@@ -182,8 +182,8 @@ export function TransferMonitor({
                 >
                     <defs>
                         <linearGradient id="mig-fill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%"   stopColor="rgb(var(--ios-blue) / 0.42)" />
-                            <stop offset="100%" stopColor="rgb(var(--ios-blue) / 0.02)" />
+                            <stop offset="0%"   stopColor="rgb(var(--adm-text-1) / 0.32)" />
+                            <stop offset="100%" stopColor="rgb(var(--adm-text-1) / 0.02)" />
                         </linearGradient>
                     </defs>
 
@@ -215,7 +215,7 @@ export function TransferMonitor({
                         <path
                             d={line}
                             fill="none"
-                            stroke="rgb(var(--ios-blue))"
+                            stroke="rgb(var(--adm-text-1))"
                             strokeWidth="2"
                             strokeLinejoin="round"
                             strokeLinecap="round"
@@ -233,7 +233,7 @@ export function TransferMonitor({
                             key={`${m.key}-label`}
                             className={clsx(
                                 'pointer-events-none absolute top-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                                live ? 'bg-ios-blue/25 text-[#8ecbff]' : 'bg-black/60 text-zinc-400',
+                                live ? 'bg-white/[0.12] text-adm-1' : 'bg-black/60 text-adm-2',
                             )}
                             style={flip
                                 ? { right: `calc(${(100 - at).toFixed(2)}% + 4px)` }
@@ -245,14 +245,14 @@ export function TransferMonitor({
                 })}
 
                 {points.length < 2 && (
-                    <div className="absolute inset-0 flex items-center justify-center text-[12px] text-zinc-600">
+                    <div className="absolute inset-0 flex items-center justify-center text-[12px] text-adm-4">
                         {reading
                             ? `Reading ${state.currentDomain ?? 'source'} rows, nothing written yet`
                             : 'Measuring throughput...'}
                     </div>
                 )}
 
-                <span className="pointer-events-none absolute bottom-1.5 end-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 tabular-nums">
+                <span className="pointer-events-none absolute bottom-1.5 end-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-adm-3 tabular-nums">
                     {windowed ? `last ${WINDOW_SECONDS / 60}m · ` : ''}{compact(yMax)}/s full scale
                 </span>
             </div>
@@ -263,8 +263,8 @@ export function TransferMonitor({
 function Readout({ label, value }: { label: string; value: string }) {
     return (
         <div>
-            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-zinc-500">{label}</div>
-            <div className={clsx('mt-0.5 font-mono text-[13.5px] font-semibold text-zinc-200 tabular-nums')}>{value}</div>
+            <div className="text-[10.5px] font-semibold text-adm-3">{label}</div>
+            <div className={clsx('mt-0.5 font-mono text-[13.5px] font-semibold text-adm-1 tabular-nums')}>{value}</div>
         </div>
     );
 }

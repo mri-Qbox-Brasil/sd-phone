@@ -7,7 +7,12 @@ local oxc       = framework.name == 'ox' and require 'bridge.shared.oxcore' or n
 ---@type table|nil ND_Core helpers (bridge.shared.ndcore); nil on every other framework.
 local ndc       = framework.name == 'nd' and require 'bridge.shared.ndcore' or nil
 ---@type table Player bridge (bridge.server.player): identifier -> online source resolution.
+---
+---Sources are ALWAYS resolved with getSourceByRealIdentifier: the citizenids handed in here come
+---from framework rosters, and under unique phones the plain resolver matches SIM identities only.
 local player    = require 'bridge.server.player'
+---@type table|nil AI Core helpers (bridge.server.aicore); nil on every other framework.
+local aicore    = framework.aicore and require 'bridge.server.aicore' or nil
 
 ---@type table Society module; the table returned at end of file. Reads and moves a company's
 ---shared balance and reads its employee roster across the supported money + management resources;
@@ -63,9 +68,20 @@ local function accName(jobName, override)
     return override or ('society_' .. jobName)
 end
 
+---The AI Core job whose bank account holds a company's money: the override when it names an
+---existing job account, otherwise the job itself.
+---@param jobName string
+---@param override? string
+---@return string
+local function aiAccount(jobName, override)
+    if override and exports['ai-core']:GetSharedMoney('job', override, 'bank') ~= nil then return override end
+    return jobName
+end
+
 ---True when a society money provider is running.
 ---@return boolean
 function society.available()
+    if framework.aicore then return true end
     -- ox_core needs no provider: it creates a shared account per group at setup, so the company
     -- money the other frameworks farm out to qb-banking or esx_addonaccount is built in.
     if framework.name == 'ox' then return true end
@@ -81,6 +97,12 @@ end
 ---@param override? string society account name override
 ---@return number
 function society.getBalance(jobName, override)
+    if framework.aicore then
+        -- A job without an account answers null, which arrives as no value at all and tonumber()
+        -- rejects, so it goes through a local.
+        local balance = exports['ai-core']:GetSharedMoney('job', aiAccount(jobName, override), 'bank')
+        return tonumber(balance) or 0
+    end
     if framework.name == 'ox' then
         local acc = oxc.groupAccount(override or jobName)
         return (acc and tonumber(acc.balance)) or 0
@@ -128,6 +150,10 @@ end
 ---@param override? string
 ---@return boolean
 function society.addMoney(jobName, amount, reason, override)
+    if framework.aicore then
+        return exports['ai-core']:AddSharedMoney('job', aiAccount(jobName, override), 'bank',
+            math.floor(amount), reason or 'Phone society deposit') == true
+    end
     if framework.name == 'ox' then
         local acc = oxc.groupAccount(override or jobName)
         if not acc then return false end
@@ -166,6 +192,10 @@ end
 ---@param override? string
 ---@return boolean
 function society.removeMoney(jobName, amount, reason, override)
+    if framework.aicore then
+        return exports['ai-core']:RemoveSharedMoney('job', aiAccount(jobName, override), 'bank',
+            math.floor(amount), reason or 'Phone society withdrawal') == true
+    end
     if framework.name == 'ox' then
         local acc = oxc.groupAccount(override or jobName)
         if not acc then return false end
@@ -333,6 +363,19 @@ function society.listEmployees(jobName)
         return out
     end
 
+    if aicore then
+        -- GetJobMembers answers loaded members' grades from memory, which the tables trail.
+        for _, m in ipairs(aicore.jobMembers(jobName)) do
+            local name = ('%s %s'):format(m.firstname or '', m.lastname or ''):gsub('^%s+', ''):gsub('%s+$', '')
+            out[#out + 1] = {
+                citizenid = m.citizenid,
+                name      = name ~= '' and name or m.citizenid,
+                grade     = tonumber(m.grade) or 0,
+            }
+        end
+        return out
+    end
+
     if framework.qb then
         local ok, rows = pcall(function()
             return MySQL.query.await([[
@@ -381,6 +424,7 @@ end
 function society.namesByCids(cids)
     local out = {}
     if not cids or #cids == 0 then return out end
+    if aicore then return aicore.names(cids) end
 
     local placeholders = {}
     for i = 1, #cids do placeholders[i] = '?' end
@@ -429,6 +473,18 @@ function society.namesByCids(cids)
     return out
 end
 
+---Removes a character from a job whether they are online or not. Only AI Core can, through
+---RemoveOfflineJob; false everywhere else, where callers queue a fire for the next load instead.
+---@param targetCid string
+---@param jobName string
+---@return boolean
+function society.dropMembership(targetCid, jobName)
+    if not aicore then return false end
+    local charId = aicore.charId(targetCid)
+    if not charId then return false end
+    return aicore.succeeded(aicore.await('RemoveOfflineJob', charId, jobName))
+end
+
 ---Set an online target's job to `jobName` at `grade`. Returns false when the target isn't
 ---currently connected. No permission checks here.
 ---@param jobName string
@@ -436,7 +492,7 @@ end
 ---@param grade? number
 ---@return boolean
 function society.hire(jobName, targetCid, grade)
-    local src = player.getSourceByIdentifier(targetCid)
+    local src = player.getSourceByRealIdentifier(targetCid)
     if not src then return false end
     return job.set(src, jobName, grade or 0) == true
 end
@@ -444,15 +500,19 @@ end
 ---Reset an online target to the unemployed job. Returns false when offline. No permission checks
 ---here.
 ---
----`fromJob` is only read on ox_core and ND, neither of which has an unemployed group to move
----someone into: being fired there means the group is REMOVED, so the caller has to say which one.
----The other frameworks ignore it and move the target to `unemployedJob` as before.
+---`fromJob` is only read on ox_core, ND and AI Core, where being fired REMOVES the job, so the
+---caller has to say which one. AI Core removes it offline too. The other frameworks ignore it and
+---move the target to `unemployedJob` as before.
 ---@param targetCid string
 ---@param unemployedJob string
----@param fromJob? string the job being fired from; required on ox_core and ND
+---@param fromJob? string the job being fired from; required on ox_core, ND and AI Core
 ---@return boolean
 function society.fire(targetCid, unemployedJob, fromJob)
-    local src = player.getSourceByIdentifier(targetCid)
+    if framework.aicore then
+        if not fromJob then return false end
+        return society.dropMembership(targetCid, fromJob)
+    end
+    local src = player.getSourceByRealIdentifier(targetCid)
     if not src then return false end
     if framework.name == 'ox' or framework.name == 'nd' then
         if not fromJob then return false end

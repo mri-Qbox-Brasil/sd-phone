@@ -14,7 +14,7 @@ import {
 import type { AdminTrackRow, PendingTrackRow, TrackFlag } from '@/apps/racing/data';
 import { RouteMapView } from '@/apps/racing/RouteMapView';
 import { useAsyncData } from '@/hooks/useAsyncData';
-import { Badge, Btn, Card, CenterNote, ConfirmModal, Input, Modal, PromptModal, Spinner } from '../ui';
+import { Badge, Btn, Card, CenterNote, ConfirmModal, Input, Modal, PromptModal, Segment, Spinner } from '../ui';
 
 const PAGE_SIZE = 25;
 
@@ -31,10 +31,10 @@ function TrackMapModal({ track, onClose }: { track: MapTarget; onClose: () => vo
 
     return (
         <Modal title={track.name} onClose={onClose} width="w-[720px]">
-            <div className="dark relative h-[420px] overflow-hidden rounded-lg bg-black/40 ring-1 ring-white/10">
+            <div className="dark relative h-[420px] overflow-hidden rounded-lg bg-black/40 ring-1 ring-adm-hair-strong">
                 {!settled && <div className="flex h-full items-center justify-center"><Spinner /></div>}
                 {settled && route.length === 0 && (
-                    <div className="flex h-full items-center justify-center px-8 text-center text-[13px] text-zinc-500">
+                    <div className="flex h-full items-center justify-center px-8 text-center text-[13px] text-adm-3">
                         This track has no usable gates, so there is no route to draw.
                     </div>
                 )}
@@ -140,7 +140,7 @@ function PublishedTab({ onToast }: { onToast: (text: string, error?: boolean) =>
                     onChange={setQuery}
                     placeholder="Filter tracks by name or author"
                 />
-                <span className="shrink-0 text-[12px] text-zinc-500">{total} tracks</span>
+                <span className="shrink-0 text-[12px] text-adm-3">{total} tracks</span>
             </div>
 
             {loading && !settled && <CenterNote><Spinner /></CenterNote>}
@@ -157,16 +157,16 @@ function PublishedTab({ onToast }: { onToast: (text: string, error?: boolean) =>
             {rows.length > 0 && (
                 <Card>
                     {rows.map(row => (
-                        <div key={row.id} className="border-t border-white/[0.05] px-4 py-3.5 first:border-t-0">
+                        <div key={row.id} className="border-t border-adm-hair px-4 py-3.5 first:border-t-0">
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
                                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                                     <span className="flex min-w-0 flex-wrap items-center gap-2">
-                                        <span className="truncate text-[14px] font-semibold text-zinc-100">{row.name}</span>
+                                        <span className="truncate text-[14px] font-semibold text-adm-1">{row.name}</span>
                                         {row.verified && <Badge tone="green">Verified</Badge>}
                                         {row.featured && <Badge tone="amber">Featured</Badge>}
                                         {!row.published && <Badge tone="red">Unpublished</Badge>}
                                     </span>
-                                    <span className="truncate text-[12px] text-zinc-500">
+                                    <span className="truncate text-[12px] text-adm-3">
                                         {[
                                             modeLabel(row.mode),
                                             `${row.gates} checkpoints`,
@@ -219,7 +219,7 @@ function PublishedTab({ onToast }: { onToast: (text: string, error?: boolean) =>
             {pages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-1">
                     <Btn disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
-                    <span className={clsx('text-[12px] tabular-nums text-zinc-500')}>{page} of {pages}</span>
+                    <span className={clsx('text-[12px] tabular-nums text-adm-3')}>{page} of {pages}</span>
                     <Btn disabled={page >= pages} onClick={() => setPage(p => Math.min(pages, p + 1))}>Next</Btn>
                 </div>
             )}
@@ -295,8 +295,8 @@ function PendingTab({ onToast, onCountChange }: {
     return (
         <div className="space-y-3">
             <div className="flex items-center gap-2">
-                <span className="text-[12px] text-zinc-500">Tracks waiting on review before players can race them.</span>
-                <span className="ms-auto shrink-0 text-[12px] text-zinc-500">{total} pending</span>
+                <span className="text-[12px] text-adm-3">Tracks waiting on review before players can race them.</span>
+                <span className="ms-auto shrink-0 text-[12px] text-adm-3">{total} pending</span>
             </div>
 
             {loading && !settled && <CenterNote><Spinner /></CenterNote>}
@@ -311,14 +311,14 @@ function PendingTab({ onToast, onCountChange }: {
             {rows.length > 0 && (
                 <Card>
                     {rows.map(row => (
-                        <div key={row.id} className="border-t border-white/[0.05] px-4 py-3.5 first:border-t-0">
+                        <div key={row.id} className="border-t border-adm-hair px-4 py-3.5 first:border-t-0">
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
                                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                                     <span className="flex min-w-0 flex-wrap items-center gap-2">
-                                        <span className="truncate text-[14px] font-semibold text-zinc-100">{row.name}</span>
+                                        <span className="truncate text-[14px] font-semibold text-adm-1">{row.name}</span>
                                         <Badge tone="amber">Pending</Badge>
                                     </span>
-                                    <span className="truncate text-[12px] text-zinc-500">
+                                    <span className="truncate text-[12px] text-adm-3">
                                         {[
                                             modeLabel(row.mode),
                                             `${row.gates} checkpoints`,
@@ -367,7 +367,7 @@ function PendingTab({ onToast, onCountChange }: {
             {pages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-1">
                     <Btn disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
-                    <span className={clsx('text-[12px] tabular-nums text-zinc-500')}>{page} of {pages}</span>
+                    <span className={clsx('text-[12px] tabular-nums text-adm-3')}>{page} of {pages}</span>
                     <Btn disabled={page >= pages} onClick={() => setPage(p => Math.min(pages, p + 1))}>Next</Btn>
                 </div>
             )}
@@ -395,23 +395,17 @@ export function RacingPage({ onToast }: { onToast: (text: string, error?: boolea
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center gap-2">
-                <Btn
-                    variant={tab === 'published' ? 'primary' : 'ghost'}
-                    onClick={() => setTab('published')}
-                >
-                    <Flag size={13} />
-                    Published
-                </Btn>
-                <Btn
-                    variant={tab === 'pending' ? 'primary' : 'ghost'}
-                    onClick={() => setTab('pending')}
-                >
-                    <Clock size={13} />
-                    Pending approval
-                    {pendingCount > 0 && <Badge tone="amber" className="ms-1">{pendingCount}</Badge>}
-                </Btn>
-            </div>
+            <Segment
+                value={tab}
+                onChange={setTab}
+                options={[
+                    { id: 'published', label: 'Published' },
+                    {
+                        id: 'pending',
+                        label: <>Pending approval{pendingCount > 0 && <Badge tone="amber" className="ms-1.5">{pendingCount}</Badge>}</>,
+                    },
+                ]}
+            />
 
             {tab === 'published'
                 ? <PublishedTab onToast={onToast} />

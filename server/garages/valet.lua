@@ -1,11 +1,13 @@
+---@type table Framework detection (bridge.shared.framework): the AI Core flag.
+local framework = require 'bridge.shared.framework'
 ---@type table Garages bridge (bridge.server.garages): vehicle lookup + the take-out write.
-local garages = require 'bridge.server.garages'
+local garages   = require 'bridge.server.garages'
 ---@type table Money bridge (bridge.server.money): fee debit and refund.
-local money   = require 'bridge.server.money'
+local money     = require 'bridge.server.money'
 ---@type table Shared server helpers (server.util): onCleanup.
-local util    = require 'server.util'
+local util      = require 'server.util'
 ---@type table Garages app config (configs.garages): the Valet block.
-local G       = require 'configs.garages'
+local G         = require 'configs.garages'
 
 ---@type table Valet settings, defaulted so a config without a Valet block simply stays off.
 local V = type(G.Valet) == 'table' and G.Valet or {}
@@ -160,18 +162,29 @@ lib.callback.register('sd-phone:server:garages:valet', function(src, payload)
         return { success = false, reason = why }
     end
 
-    local entity = spawnVehicle(veh.model, spawn)
-    if not entity then return refund('spawnFailed') end
+    local netId
+    if garages.spawnsOwnVehicles() then
+        netId = garages.spawnOwned(src, veh, spawn)
+        if not netId then return refund('spawnFailed') end
+    else
+        local entity = spawnVehicle(veh.model, spawn)
+        if not entity then return refund('spawnFailed') end
 
-    local netId = NetworkGetNetworkIdFromEntity(entity)
-    if not netId or netId == 0 then
-        pcall(DeleteEntity, entity)
-        return refund('spawnFailed')
-    end
+        netId = NetworkGetNetworkIdFromEntity(entity)
+        if not netId or netId == 0 then
+            pcall(DeleteEntity, entity)
+            return refund('spawnFailed')
+        end
 
-    if not garages.takeOut(src, veh.plate, netId) then
-        pcall(DeleteEntity, entity)
-        return refund('takeOutFailed')
+        if not garages.takeOut(src, veh.plate, netId) then
+            pcall(DeleteEntity, entity)
+            return refund('takeOutFailed')
+        end
+
+        -- AI Core hands keys out on the server through its key layer, whichever key script runs.
+        if framework.aicore then
+            pcall(function() exports['ai-core']:GiveVehicleKeys(src, veh.plate, 'garage') end)
+        end
     end
 
     if cid then lastValet[cid] = os.time() end

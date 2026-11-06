@@ -44,6 +44,7 @@ export interface MailMessage {
     read:      boolean;
     flagged:   boolean;
     attachments?: MailAttachment[];
+    action?:   { label: string; used: boolean };
 }
 
 const FOLDER_IDS: Folder[] = ['inbox', 'flagged', 'drafts', 'sent', 'spam', 'bin'];
@@ -149,6 +150,7 @@ const MOCK: { accounts: MailAccount[]; messages: MailMessage[]; savedEmails: str
             subject: 'Your vehicle is ready for pickup',
             body: 'Good news! The work on your vehicle is complete and it is ready for collection.\n\nWe are open until 9pm. Bring your ID and booking reference.\n\nThe LSC Team',
             sentAt: ago(2 * HR), read: false, flagged: false,
+            action: { label: 'Set Waypoint', used: false },
         },
         {
             id: 'm4', accountId: PRIMARY_EMAIL, folder: 'inbox',
@@ -417,6 +419,18 @@ export async function attachmentSaveStates(accountEmail: string, messageId: stri
     if (!isFiveM) return [];
     const res = await apiCall<{ saved?: boolean[] }>('sd-phone:mail:attachmentSaveStates', { accountEmail, messageId });
     return res.success && Array.isArray(res.data?.saved) ? res.data.saved : [];
+}
+
+export async function runMailAction(accountEmail: string, messageId: string): Promise<MailMessage | string> {
+    if (!isFiveM) {
+        const m = MOCK.messages.find(x => x.id === messageId);
+        if (!m?.action || m.action.used) return t('mail.actionAlreadyUsed', 'That has already been done');
+        m.action = { ...m.action, used: true };
+        return { ...m };
+    }
+    const res = await apiCall<{ message: MailMessage }>('sd-phone:mail:runAction', { accountEmail, messageId });
+    if (res.success && res.data?.message) return res.data.message;
+    return failText(res, t('mail.actionFailed', 'That could not be done right now.'));
 }
 
 export async function saveAttachment(accountEmail: string, messageId: string, index: number): Promise<{ ok: boolean; message?: string }> {

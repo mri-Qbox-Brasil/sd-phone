@@ -296,7 +296,7 @@ export function scopeLabel(id: string): string {
 // Epoch seconds OR milliseconds -> short local date-time. The server mixes both
 // (TIMESTAMP columns arrive as seconds, BIGINT ms columns as milliseconds).
 export function fmtTime(epoch?: number | null): string {
-    if (!epoch) return '—';
+    if (!epoch) return '-';
     const ms = epoch > 1e12 ? epoch : epoch * 1000;
     const d = new Date(ms);
     return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' })
@@ -305,7 +305,7 @@ export function fmtTime(epoch?: number | null): string {
 
 export function fmtPhone(number?: string | null): string {
     const d = (number ?? '').replace(/\D/g, '');
-    if (!d) return '—';
+    if (!d) return '-';
     return formatPhone(d);
 }
 
