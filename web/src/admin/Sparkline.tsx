@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const ACCENT = '#6db4ff';
+const ACCENT = '#ededef';
 const W = 132;
 const H = 30;
 const PAD = 3;
@@ -63,13 +63,12 @@ export function Sparkline({ points, days, onHover }: {
                 <line x1={x(at)} y1={0} x2={x(at)} y2={H} stroke="#ffffff" strokeOpacity="0.18" strokeWidth="1" />
             )}
 
-            <circle cx={x(shown)} cy={y(points[shown])} r="2.75" fill={ACCENT} stroke="#141416" strokeWidth="2" />
+            <circle cx={x(shown)} cy={y(points[shown])} r="2.75" fill={ACCENT} stroke="#121316" strokeWidth="2" />
         </svg>
     );
 }
 
-export function TrendTile({ icon, label, value, points, days }: {
-    icon:    React.ReactNode;
+export function TrendTile({ label, value, points, days }: {
     label:   string;
     value:   number | undefined;
     points?: number[];
@@ -86,19 +85,16 @@ export function TrendTile({ icon, label, value, points, days }: {
     const hovered = at !== null && days ? `${days[at]?.slice(5)} · ${line[at]?.toLocaleString()}` : null;
 
     return (
-        <div className="rounded-xl bg-white/[0.035] px-4 py-3.5 ring-1 ring-white/[0.06]">
+        <div className="adm-card px-5 py-4">
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-zinc-400">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.06]">{icon}</span>
-                        <span className="truncate text-[11.5px] font-medium text-zinc-500">{label}</span>
+                    <div className="truncate text-[12.5px] text-adm-3">{label}</div>
+                    <div className="mt-1.5 text-[24px] font-semibold leading-none tracking-[-0.01em] text-adm-1 tabular-nums">
+                        {value === undefined ? '-' : value.toLocaleString()}
                     </div>
-                    <div className="mt-2 text-[22px] font-bold leading-none text-zinc-100 tabular-nums">
-                        {value === undefined ? '—' : value.toLocaleString()}
-                    </div>
-                    <div className="mt-1 h-[15px] text-[11.5px] tabular-nums text-zinc-500">
+                    <div className="mt-1 h-[15px] text-[11.5px] tabular-nums text-adm-3">
                         {hovered ?? (line.length > 1
-                            ? <span>{delta === 0 ? '—' : delta > 0 ? `▲ ${delta.toLocaleString()}` : `▼ ${Math.abs(delta).toLocaleString()}`} vs yesterday</span>
+                            ? <span>{delta === 0 ? '-' : delta > 0 ? `▲ ${delta.toLocaleString()}` : `▼ ${Math.abs(delta).toLocaleString()}`} vs yesterday</span>
                             : null)}
                     </div>
                 </div>

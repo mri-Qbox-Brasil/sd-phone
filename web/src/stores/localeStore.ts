@@ -17,6 +17,7 @@ function saveLocal(code: string) {
 
 interface LocaleState {
     locale: string;
+    changedAt: number;
     initialized: boolean;
     /** Player explicitly picked a language (Setup or Settings) — applies, persists, and wins from now on. */
     setLocale: (code: string) => void;
@@ -26,40 +27,48 @@ interface LocaleState {
     hydrate: () => void;
 }
 
-export const useLocaleStore = create<LocaleState>((set, get) => ({
-    locale: getLocale(),
-    initialized: false,
+export const useLocaleStore = create<LocaleState>((set, get) => {
+    const adopt = () => {
+        const next = getLocale();
+        if (next !== get().locale) set({ locale: next, changedAt: Date.now() });
+    };
 
-    setLocale: (code) => {
-        set({ initialized: true });
-        void applyLocale(code).then(() => set({ locale: getLocale() }));
-        if (isFiveM) void fetchNui('sd-phone:settings:setLocale', { locale: code }).catch(() => {});
-        else saveLocal(code);
-    },
+    return {
+        locale: getLocale(),
+        changedAt: 0,
+        initialized: false,
 
-    applyServerDefault: (code) => {
-        if (get().initialized) return;
-        set({ initialized: true });
-        void applyLocale(code).then(() => set({ locale: getLocale() }));
-    },
+        setLocale: (code) => {
+            set({ initialized: true });
+            void applyLocale(code).then(adopt);
+            if (isFiveM) void fetchNui('sd-phone:settings:setLocale', { locale: code }).catch(() => {});
+            else saveLocal(code);
+        },
 
-    hydrate: () => {
-        if (isFiveM) {
-            void fetchNui<{ data?: { locale?: string } }>('sd-phone:settings:get')
-                .then(res => {
-                    const code = res?.data?.locale;
-                    if (code) {
-                        set({ initialized: true });
-                        void applyLocale(code).then(() => set({ locale: getLocale() }));
-                    }
-                })
-                .catch(() => {});
-        } else {
-            const code = loadLocal();
-            if (code) {
-                set({ initialized: true });
-                void applyLocale(code).then(() => set({ locale: getLocale() }));
+        applyServerDefault: (code) => {
+            if (get().initialized) return;
+            set({ initialized: true });
+            void applyLocale(code).then(adopt);
+        },
+
+        hydrate: () => {
+            if (isFiveM) {
+                void fetchNui<{ data?: { locale?: string } }>('sd-phone:settings:get')
+                    .then(res => {
+                        const code = res?.data?.locale;
+                        if (code) {
+                            set({ initialized: true });
+                            void applyLocale(code).then(adopt);
+                        }
+                    })
+                    .catch(() => {});
+            } else {
+                const code = loadLocal();
+                if (code) {
+                    set({ initialized: true });
+                    void applyLocale(code).then(adopt);
+                }
             }
-        }
-    },
-}));
+        },
+    };
+});

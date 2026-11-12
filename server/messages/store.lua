@@ -34,7 +34,9 @@ end
 ---Creates the message tables idempotently, back-fills missing columns, and upgrades the
 ---reactions primary key. Run once at boot.
 function store.ensureSchema()
-    util.rescueLegacyTable('phone_messages', 'citizenid')
+    -- qb-phone's phone_messages carries a citizenid column too, so only `conversation` tells the
+    -- two shapes apart.
+    util.rescueLegacyTable('phone_messages', 'conversation')
     util.rescueLegacyTable('phone_message_reactions', 'mid')
 
     MySQL.query.await([[

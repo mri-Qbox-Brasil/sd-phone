@@ -127,11 +127,40 @@ end
 ---@type table<string, true> Inventories that hold black money as a black_money item.
 local BLACK_MONEY_ITEM = { ['ox_inventory'] = true, ['one_inventory'] = true }
 
----Pick the "read black-money balance" implementation once at module load: ox and one_inventory
----count black_money, qb-inventory sums markedbills `info.worth`, ESX reads the account. 0 with no
----supported path.
+---@type integer Milliseconds the AI Core black_money account check is reused before it is asked again.
+local ACCOUNT_TYPES_TTL_MS = 30000
+
+---@type { has: boolean, at: integer }|nil The last AI Core black_money account check.
+local blackAccount
+
+---True when the AI Core server defines a black_money account; without it, black money is the
+---black_money item, as on ox. The account types come from the admin panel and only change when the
+---owner edits it, while GetAccountTypes copies the whole list across, so the answer is reused for
+---ACCOUNT_TYPES_TTL_MS.
+---@return boolean
+local function aiBlackAccount()
+    local now = GetGameTimer()
+    if blackAccount and now - blackAccount.at < ACCOUNT_TYPES_TTL_MS then return blackAccount.has end
+
+    local ok, types = pcall(function() return exports['ai-core']:GetAccountTypes() end)
+    blackAccount = { has = ok and type(types) == 'table' and types.black_money ~= nil, at = now }
+    return blackAccount.has
+end
+
+---Pick the "read black-money balance" implementation once at module load: AI Core and ESX read the
+---account (AI Core counts the item when it has none), ox and one_inventory count black_money,
+---qb-inventory sums markedbills `info.worth`. 0 with no supported path.
 ---@return fun(source: number): number
 local function chooseGetBlack()
+    if framework.aicore then
+        local invMod = require 'bridge.server.inventory'
+        return function(src)
+            if not aiBlackAccount() then return invMod.count(src, 'black_money') end
+            -- A null answer arrives as no value at all, which tonumber() rejects, so it goes through a local.
+            local balance = exports['ai-core']:GetMoney(src, 'black_money')
+            return tonumber(balance) or 0
+        end
+    end
     if BLACK_MONEY_ITEM[inventoryId.name or ''] then
         local invMod = require 'bridge.server.inventory'
         return function(src) return invMod.count(src, 'black_money') end
@@ -167,11 +196,18 @@ local getBlack = chooseGetBlack()
 ---@return number
 function money.getBlack(source) return getBlack(source) end
 
----Pick the "credit black money" implementation once at module load: ox and one_inventory add
----black_money, qb mints one markedbills with the amount in `info.worth`, ESX credits the account.
----False with no path.
+---Pick the "credit black money" implementation once at module load: AI Core and ESX credit the
+---account (AI Core adds the item when it has none), ox and one_inventory add black_money, qb mints
+---one markedbills with the amount in `info.worth`. False with no path.
 ---@return fun(source: number, amount: number): boolean
 local function chooseAddBlack()
+    if framework.aicore then
+        local invMod = require 'bridge.server.inventory'
+        return function(src, amount)
+            if not aiBlackAccount() then return invMod.add(src, 'black_money', amount) end
+            return exports['ai-core']:AddMoney(src, 'black_money', math.floor(amount), 'sd-phone') == true
+        end
+    end
     if BLACK_MONEY_ITEM[inventoryId.name or ''] then
         local invMod = require 'bridge.server.inventory'
         return function(src, amount) return invMod.add(src, 'black_money', amount) end
@@ -205,6 +241,13 @@ function money.addBlack(source, amount) return addBlack(source, amount) end
 ---left the player. The qb path removes bills by slot, re-adding a reduced bill on a partial consume.
 ---@return fun(source: number, amount: number): boolean
 local function chooseRemoveBlack()
+    if framework.aicore then
+        local invMod = require 'bridge.server.inventory'
+        return function(src, amount)
+            if not aiBlackAccount() then return invMod.remove(src, 'black_money', amount) end
+            return exports['ai-core']:RemoveMoney(src, 'black_money', math.floor(amount), 'sd-phone') == true
+        end
+    end
     if BLACK_MONEY_ITEM[inventoryId.name or ''] then
         local invMod = require 'bridge.server.inventory'
         return function(src, amount) return invMod.remove(src, 'black_money', amount) end

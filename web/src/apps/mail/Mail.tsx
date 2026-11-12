@@ -14,8 +14,8 @@ import { Compose } from './Compose';
 import { AlertDialog } from '@/ui/AlertDialog';
 import {
     getFolderLabels, declineEmail, deleteAccount, discardDraft, inFolder, listMail, listSavedEmails, loadActiveAccountId, loadFolderOrder, markRead,
-    markManyRead, moveToBin, moveTo, removeSavedEmail, saveActiveAccountId, saveDraft, saveEmail, saveFolderOrder, sendMail, signIn as mailSignIn,
-    signOut, signUp as mailSignUp, toggleFlag, type SavedEmailState,
+    markManyRead, moveToBin, moveTo, removeSavedEmail, runMailAction, saveActiveAccountId, saveDraft, saveEmail, saveFolderOrder, sendMail,
+    signIn as mailSignIn, signOut, signUp as mailSignUp, toggleFlag, type SavedEmailState,
 } from './data';
 import { isEmailish } from './mailSuggest';
 import { SavedEmailsPage } from './SavedEmails';
@@ -139,6 +139,13 @@ export function Mail({ onClose }: { onClose: () => void }) {
         if (!target) return;
         setMessages(prev => prev.map(x => x.id === id ? { ...x, flagged: !x.flagged } : x));
         await toggleFlag(target.accountId, id);
+    }
+
+    async function handleRunAction(m: MailMessage): Promise<string | null> {
+        const result = await runMailAction(m.accountId, m.id);
+        if (typeof result === 'string') return result;
+        setMessages(prev => prev.map(x => x.id === result.id ? result : x));
+        return null;
     }
 
     async function handleMoveToBin(id: string) {
@@ -429,6 +436,7 @@ export function Mail({ onClose }: { onClose: () => void }) {
                     onToggleFlag={(id) => void handleToggleFlag(id)}
                     onDelete={(id) => void handleMoveToBin(id)}
                     onMove={(id, folder) => void handleMove(id, folder)}
+                    onRunAction={handleRunAction}
                     onReply={(m) => setComposeFor({
                         accountId: m.accountId,
                         to:        m.from.email,

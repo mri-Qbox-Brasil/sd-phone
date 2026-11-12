@@ -33,10 +33,19 @@ local CD = 'codem-inventory'
 ---@type string|nil Detected inventory resource; nil routes every chooser to the framework paths.
 local active = inventoryId.name
 
+---@type string ai-core, whose inventory layer forwards to whichever inventory an AI Core server runs.
+local LAYER = 'ai-core'
+---@type boolean True on AI Core: every item call goes through ai-core's layer, never an inventory
+---directly, so it keeps working when the owner swaps ai-inventory for another one.
+local ON_LAYER = framework.aicore == true
+
 ---Pick the inventory backend's AddItem implementation once at module load. Dedicated backends
 ---return their own success signal; framework paths cover the rest; with no backend, always false.
 ---@return fun(source: number, item: string, count: number, metadata?: table): boolean
 local function chooseAdd()
+    if ON_LAYER then
+        return function(src, item, count, metadata) return exports[LAYER]:AddItem(src, item, count, metadata) == true end
+    end
     if active == OX then
         return function(src, item, count, metadata) return exports[OX]:AddItem(src, item, count, metadata) end
     end
@@ -96,6 +105,7 @@ inventory.add = chooseAdd()
 ---Every path answers 0, never nil, when the player or item can't be resolved.
 ---@return fun(source: number, item: string): number
 local function chooseCount()
+    if ON_LAYER then return function(src, item) return exports[LAYER]:GetItemCount(src, item) or 0 end end
     if active == OX then
         return function(src, item)
             local items = exports[OX]:Search(src, 'slots', item)
@@ -151,6 +161,9 @@ end
 ---report their own result; the ESX path verifies the held count first; with no backend, always false.
 ---@return fun(source: number, item: string, count: number, metadata?: table): boolean
 local function chooseRemove()
+    if ON_LAYER then
+        return function(src, item, count, metadata) return exports[LAYER]:RemoveItem(src, item, count, metadata) == true end
+    end
     if active == OX then
         return function(src, item, count, metadata) return exports[OX]:RemoveItem(src, item, count, metadata) end
     end
@@ -209,6 +222,9 @@ inventory.remove = chooseRemove()
 ---weight maths, and with no backend the answer is always false.
 ---@return fun(source: number, item: string, count: number, slot?: any): boolean
 local function chooseCanCarry()
+    if ON_LAYER then
+        return function(src, item, count) return exports[LAYER]:CanCarryItem(src, item, count) == true end
+    end
     if active == CD then
         return function() return true end
     end
@@ -263,6 +279,11 @@ inventory.canCarry = chooseCanCarry()
 ---per-item export ('phone' -> 'usePhone'); with no path at all, registration errors at boot.
 ---@return fun(item: string, cb: fun(source: number, item?: any, inv?: table, slot?: any, data?: any)): nil
 local function chooseRegisterUsable()
+    -- ai-core keeps the registration itself and hands it to whichever inventory is active, so it
+    -- survives an inventory restart. The handler gets (source, { name, slot, count, metadata }).
+    if ON_LAYER then
+        return function(item, cb) return exports[LAYER]:RegisterUsableItem(item, cb) end
+    end
     if active == OX then
         return function(item, cb)
             local exportName = 'use' .. item:gsub('^%l', string.upper)
@@ -306,6 +327,12 @@ inventory.registerUsable = chooseRegisterUsable()
 ---table, then to the raw key.
 ---@return fun(itemName: string): string|nil
 local function chooseLabel()
+    if ON_LAYER then
+        return function(itemName)
+            local ok, def = pcall(exports[LAYER].GetItemDefinition, exports[LAYER], itemName)
+            return (ok and type(def) == 'table') and def.label or itemName
+        end
+    end
     if active == OX or active == TG then
         return function(itemName)
             local ok, item = pcall(exports[active].Items, exports[active], itemName)
@@ -387,6 +414,7 @@ local QBCORE = 'qb-core'
 ---slot-metadata path exists (plain ESX inventory).
 ---@return string|nil
 local function slotBackend()
+    if ON_LAYER then return LAYER end
     if slotLatched then return slotLatched end
     for _, name in ipairs(LATCHING) do
         if GetResourceState(name) == 'started' then
@@ -742,6 +770,40 @@ SLOT_BACKENDS[ONE] = {
     removeFromSlot = function(src, item, slot, count)
         local ok = exports[ONE]:RemoveItem(src, item, count or 1, nil, slot)
         return ok == true
+    end,
+}
+
+---Every slot a player holds that `match` accepts, read from ai-core's GetItems list (the layer has
+---no per-item search or single-slot getter).
+---@param src number player server id
+---@param match fun(row: table): boolean
+---@return SlotEntry[]
+local function layerSlots(src, match)
+    local out = {}
+    local rows = exports[LAYER]:GetItems(src)
+    if type(rows) ~= 'table' then return out end
+    for _, row in ipairs(rows) do
+        if type(row) == 'table' and match(row) then
+            out[#out + 1] = slotEntry(row.slot, row.name, row.count, row.metadata)
+        end
+    end
+    return out
+end
+
+-- ai-core's inventory layer (AI Core): a bare server id addresses the player's inventory, whatever
+-- inventory the server runs. No containers, and SetItemMetadata replaces the slot's table outright.
+SLOT_BACKENDS[LAYER] = {
+    search = function(src, item)
+        return layerSlots(src, function(row) return row.name == item end)
+    end,
+    get = function(src, slot)
+        return layerSlots(src, function(row) return row.slot == slot end)[1]
+    end,
+    setMetadata = function(src, slot, metadata)
+        return exports[LAYER]:SetItemMetadata(src, slot, metadata) == true
+    end,
+    removeFromSlot = function(src, item, slot, count)
+        return exports[LAYER]:RemoveItem(src, item, count or 1, nil, slot) == true
     end,
 }
 

@@ -62,6 +62,7 @@ local function kindLabel(kind)
     if kind == 'photo'    then return 'photo' end
     if kind == 'signature-request' then return 'signature request' end
     if kind == 'id-card' then return 'ID card' end
+    if kind == 'photogram-profile' then return 'Photogram profile' end
     return 'contact'
 end
 
@@ -123,16 +124,18 @@ end
 ---@param target any client-supplied recipient server id
 ---@param kind string share kind
 ---@param payload table kind-specific share data, handed to the handler on accept
+---@param opts? { pocketed?: boolean, detail?: string } pocketed: the target's phone may be put away;
+---detail: a short line the recipient's prompt shows alongside the kind (e.g. a handle)
 ---@return boolean ok
 ---@return table? refusal keyed refusal envelope when ok is false
-function core.request(src, target, kind, payload)
+function core.request(src, target, kind, payload, opts)
     target = tonumber(target)
     if not target then return false, util.fail('share.invalidRecipient', 'Invalid recipient') end
     -- Sharing to yourself needs no second player, so it is the one path with no proximity cost
     -- at all; the picker never offers it either.
     if target == src then return false, util.fail('share.invalidRecipient', 'Invalid recipient') end
     if not handlers[kind] then return false, util.fail('share.unknownShareType', 'Unknown share type') end
-    if not core.canShareTo(src, target) then
+    if not core.canShareTo(src, target, opts and opts.pocketed == true) then
         return false, util.fail('share.recipientNoLongerNearby', 'Recipient is no longer nearby')
     end
 
@@ -156,6 +159,7 @@ function core.request(src, target, kind, payload)
 
     TriggerClientEvent('sd-phone:client:airshare:request', target, {
         id = id, kind = kind, fromName = nameFor(target, src),
+        detail = opts and type(opts.detail) == 'string' and opts.detail:sub(1, 64) or nil,
     })
     return true
 end
@@ -200,10 +204,16 @@ function core.respond(src, id, accept)
     -- just watch the prompt disappear: the recipient's client fires the respond callback and
     -- drops the card without reading the result, and the sender was only ever told on success.
     -- The recipient gets the handler's specific reason; the sender only needs to know it missed.
-    TriggerClientEvent('sd-phone:client:notify', src, {
+    local recipientNotice = {
         app = 'phone', title = 'AirShare',
-        body = reason or ('That %s could not be saved.'):format(what),
-    })
+        bodyKey = 'share.couldNotSaveSharedItem', body = ('That %s could not be saved.'):format(what),
+        bodyVars = { kind = what },
+    }
+    -- Handler-provided reasons are custom content, not the generic kind template.
+    if reason then
+        recipientNotice.body, recipientNotice.bodyKey, recipientNotice.bodyVars = reason, nil, nil
+    end
+    TriggerClientEvent('sd-phone:client:notify', src, recipientNotice)
     TriggerClientEvent('sd-phone:client:notify', req.fromSrc, {
         app = 'phone', title = 'AirShare',
         bodyKey = 'share.couldNotSaveYourShare', body = ('%s could not save your %s.'):format(who, what),
@@ -268,9 +278,10 @@ end
 ---config.Share.Range of `src`, measured from live server-side coords.
 ---@param src number sender server id
 ---@param target number recipient server id
+---@param pocketed? boolean true lets a target whose phone is put away through
 ---@return boolean allowed
-function core.canShareTo(src, target)
-    if not openPhones[target] then return false end
+function core.canShareTo(src, target, pocketed)
+    if not openPhones[target] and not pocketed then return false end
     local o, c = coordsOf(src), coordsOf(target)
     if not o or not c then return false end
     return #(o - c) <= config.Share.Range

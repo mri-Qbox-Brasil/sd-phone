@@ -11,6 +11,7 @@ import { TileCanvas } from './map/TileCanvas';
 import { MAX_ZOOM, MIN_ZOOM, useMapViewport } from './map/useMapViewport';
 
 const POLL_MS = 5000;
+const STYLE_LABELS: Record<MapStyleId, string> = { satellite: 'Satellite', atlas: 'Atlas' };
 
 export function MapPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => void }) {
     const [players, setPlayers] = useState<AdminLivePlayer[]>([]);
@@ -49,23 +50,23 @@ export function MapPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => void 
     return (
         <div className="flex h-full min-h-0 flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-[13px] text-zinc-400">
-                    <Users size={14} className="text-zinc-500" />
-                    <span className="font-semibold text-zinc-200 tabular-nums">{players.length}</span>
+                <div className="flex items-center gap-2 text-[13px] text-adm-2">
+                    <Users size={14} className="text-adm-3" />
+                    <span className="font-semibold text-adm-1 tabular-nums">{players.length}</span>
                     online
-                    {live && <span className="text-[11.5px] text-zinc-600">· refreshing every {POLL_MS / 1000}s</span>}
+                    {live && <span className="text-[11.5px] text-adm-4">· refreshing every {POLL_MS / 1000}s</span>}
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <div className="flex overflow-hidden rounded-lg ring-1 ring-white/10">
+                    <div className="flex overflow-hidden rounded-lg ring-1 ring-adm-hair-strong">
                         {styles.map(s => (
                             <button
                                 key={s.id}
                                 type="button"
                                 onClick={() => pickStyle(s.id)}
-                                className={`px-2.5 py-1.5 text-[12px] font-medium transition-colors ${s.id === styleId ? 'bg-white/15 text-zinc-100' : 'bg-transparent text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
+                                className={`px-2.5 py-1.5 text-[12px] font-medium transition-colors ${s.id === styleId ? 'bg-adm-surface-3 text-adm-1' : 'bg-transparent text-adm-3 hover:bg-adm-surface-2 hover:text-adm-2'}`}
                             >
-                                {s.label}
+                                {STYLE_LABELS[s.id]}
                             </button>
                         ))}
                     </div>
@@ -103,7 +104,7 @@ export function MapPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => void 
                                 onPointerEnter={() => setHover(p)}
                                 onPointerLeave={() => setHover(null)}
                                 className="absolute -ms-[6px] -mt-[6px] h-3 w-3 rounded-full ring-2 ring-black/60 transition-transform hover:scale-150"
-                                style={{ left: `${at.left}%`, top: `${at.top}%`, background: '#6db4ff' }}
+                                style={{ left: `${at.left}%`, top: `${at.top}%`, background: 'rgb(var(--adm-ok))' }}
                                 aria-label={p.name}
                             />
                         );
@@ -111,15 +112,15 @@ export function MapPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => void 
 
                     {hover && hoverAt && (
                         <div
-                            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[150%] whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11.5px] text-zinc-100 ring-1 ring-white/10"
+                            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[150%] whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11.5px] text-adm-1 ring-1 ring-adm-hair-strong"
                             style={{ left: `${hoverAt.left}%`, top: `${hoverAt.top}%` }}
                         >
                             <span className="font-semibold">{hover.name}</span>
-                            <span className="ms-1.5 tabular-nums text-zinc-500">{hover.x}, {hover.y}</span>
+                            <span className="ms-1.5 tabular-nums text-adm-3">{hover.x}, {hover.y}</span>
                         </div>
                     )}
 
-                    <div className="absolute end-2.5 top-2.5 z-10 flex flex-col overflow-hidden rounded-lg bg-black/70 ring-1 ring-white/10">
+                    <div className="absolute end-2.5 top-2.5 z-10 flex flex-col overflow-hidden rounded-lg bg-black/70 ring-1 ring-adm-hair-strong">
                         <ZoomBtn label="Zoom in" disabled={vp.view.zoom >= MAX_ZOOM} onClick={() => vp.zoomBy(1.6)}>
                             <Plus size={14} />
                         </ZoomBtn>
@@ -131,7 +132,7 @@ export function MapPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => void 
                         </ZoomBtn>
                     </div>
 
-                    <div className="pointer-events-none absolute bottom-2.5 start-2.5 z-10 rounded-md bg-black/70 px-2 py-1 text-[11px] tabular-nums text-zinc-400 ring-1 ring-white/10">
+                    <div className="pointer-events-none absolute bottom-2.5 start-2.5 z-10 rounded-md bg-black/70 px-2 py-1 text-[11px] tabular-nums text-adm-2 ring-1 ring-adm-hair-strong">
                         {vp.view.zoom.toFixed(1)}x
                     </div>
                 </div>
@@ -156,7 +157,7 @@ function ZoomBtn({ children, label, onClick, disabled }: {
             disabled={disabled}
             onPointerDown={e => e.stopPropagation()}
             onClick={onClick}
-            className="flex h-7 w-7 items-center justify-center text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:text-zinc-600"
+            className="flex h-7 w-7 items-center justify-center text-adm-2 transition-colors hover:bg-adm-surface-3 hover:text-adm-1 disabled:pointer-events-none disabled:text-adm-4"
         >
             {children}
         </button>

@@ -16,7 +16,7 @@ import {
     fmtPhone, fmtTime, scopeLabel,
     type AdminBirdyPost, type AdminBirdyProfile, type AdminCall, type AdminMessage, type AdminMute, type AdminOverview,
 } from '../types';
-import { Badge, Btn, Card, CenterNote, ConfirmModal, LoadMore, OnlineDot, PromptModal, Spinner } from '../ui';
+import { Badge, Btn, Card, CenterNote, ConfirmModal, LoadMore, OnlineDot, PromptModal, Spinner, Toggle } from '../ui';
 import { usePaged } from '../usePaged';
 import { BADGE_TINT, PostCard } from './BirdyPage';
 import { MuteForm } from './MutesPage';
@@ -35,9 +35,9 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
-        <div className="flex items-center justify-between gap-4 border-t border-white/[0.05] px-4 py-2.5 text-[13px] first:border-t-0">
-            <div className="text-zinc-500">{label}</div>
-            <div className="text-end text-zinc-200">{children}</div>
+        <div className="flex items-center justify-between gap-4 border-t border-adm-hair px-4 py-2.5 text-[13px] first:border-t-0">
+            <div className="text-adm-3">{label}</div>
+            <div className="text-end text-adm-1">{children}</div>
         </div>
     );
 }
@@ -96,10 +96,10 @@ export function PlayerDetail({ cid, onBack, toast, onOpenGallery }: {
                     <div>
                         <div className="flex items-center gap-2.5">
                             <OnlineDot online={ov.online} />
-                            <span className="text-[17px] font-bold text-zinc-100">{ov.name ?? 'Unknown player'}</span>
+                            <span className="text-[17px] font-semibold text-adm-1">{ov.name ?? 'Unknown player'}</span>
                             {ov.mutes.length > 0 && <Badge tone="amber">{ov.mutes.length} active mute{ov.mutes.length > 1 ? 's' : ''}</Badge>}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-3 text-[12px] text-zinc-500">
+                        <div className="mt-0.5 flex items-center gap-3 text-[12px] text-adm-3">
                             <span className="font-mono">{ov.citizenid}</span>
                             <span className="inline-flex items-center gap-1"><Phone size={11} /> {fmtPhone(ov.sim?.activeNumber ?? s?.phoneNumber)}</span>
                         </div>
@@ -119,7 +119,7 @@ export function PlayerDetail({ cid, onBack, toast, onOpenGallery }: {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 border-b border-white/[0.07] pb-0">
+            <div className="flex gap-1 border-b border-adm-hair pb-0">
                 {TABS.map(t => (
                     <button
                         key={t.id}
@@ -128,13 +128,13 @@ export function PlayerDetail({ cid, onBack, toast, onOpenGallery }: {
                         className={clsx(
                             'inline-flex items-center gap-1.5 rounded-t-lg border-b-2 px-3 py-2 text-[12.5px] font-semibold transition-colors',
                             tab === t.id
-                                ? 'border-ios-blue text-zinc-100'
-                                : 'border-transparent text-zinc-500 hover:text-zinc-300',
+                                ? 'border-adm-1 text-adm-1'
+                                : 'border-transparent text-adm-3 hover:text-adm-2',
                         )}
                     >
                         {t.icon}{t.label}
                         {t.id === 'moderation' && ov.mutes.length > 0 && (
-                            <span className="rounded-full bg-ios-orange/20 px-1.5 text-[10px] text-ios-orange">{ov.mutes.length}</span>
+                            <span className="rounded-full bg-adm-warn/[0.12] px-1.5 text-[10px] text-adm-warn">{ov.mutes.length}</span>
                         )}
                     </button>
                 ))}
@@ -204,7 +204,7 @@ export function PlayerDetail({ cid, onBack, toast, onOpenGallery }: {
             {modal !== null && typeof modal === 'object' && (
                 <PromptModal
                     title="Set new password"
-                    body={<>New password for <span className="font-mono text-zinc-200">{modal.password.label}</span>. Tell the player their
+                    body={<>New password for <span className="font-mono text-adm-1">{modal.password.label}</span>. Tell the player their
                         temporary password and ask them to change it.</>}
                     placeholder="Temporary password"
                     submitLabel="Set password"
@@ -229,7 +229,7 @@ function CountRow({ label, count, onOpen }: { label: string; count: number; onOp
                     type="button"
                     onClick={onOpen}
                     title={`Open ${label.toLowerCase()}`}
-                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold text-[#6db4ff] transition-colors hover:bg-ios-blue/15"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold text-adm-1 transition-colors hover:bg-adm-surface-3"
                 >
                     {count}<ChevronRight size={13} className="opacity-60" />
                 </button>
@@ -259,8 +259,8 @@ function OverviewTab({ ov, toast, reload, onOpenTab, onOpenGallery, onResetPassc
                 <InfoRow label="Airplane mode">{s?.airplane ? <Badge tone="amber">On</Badge> : 'Off'}</InfoRow>
                 <InfoRow label="Theme">{s?.theme ?? 'default'}{s?.darkTheme ? ` / ${s.darkTheme}` : ''}</InfoRow>
                 <InfoRow label="Locale">{s?.locale ?? 'default'}</InfoRow>
-                <InfoRow label="Card name">{s?.cardName ?? '—'}</InfoRow>
-                <InfoRow label="Card email">{s?.cardEmail ?? '—'}</InfoRow>
+                <InfoRow label="Card name">{s?.cardName ?? '-'}</InfoRow>
+                <InfoRow label="Card email">{s?.cardEmail ?? '-'}</InfoRow>
                 <InfoRow label="Last activity">{fmtTime(s?.updatedAt)}</InfoRow>
             </Card>
             <div className="space-y-4">
@@ -288,14 +288,14 @@ function OverviewTab({ ov, toast, reload, onOpenTab, onOpenGallery, onResetPassc
                 </Card>
                 <Card title="Squawk accounts">
                     {ov.birdy.length === 0 && (
-                        <div className="px-4 py-3 text-[13px] text-zinc-500">No Squawk account.</div>
+                        <div className="px-4 py-3 text-[13px] text-adm-3">No Squawk account.</div>
                     )}
                     {ov.birdy.map(b => (
                         <InfoRow key={b.handle} label={`@${b.handle}`}>
                             <span className="inline-flex items-center gap-1.5">
                                 {b.displayName}
                                 {b.verified && <BadgeCheck size={14} style={{ color: BADGE_TINT[b.verifiedType ?? 'blue'] ?? BADGE_TINT.blue }} />}
-                                <span className="text-zinc-500">
+                                <span className="text-adm-3">
                                     {b.loggedIn ? 'signed in' : fmtTime(b.createdAt)}
                                 </span>
                             </span>
@@ -347,14 +347,14 @@ function SimCard({ ov, toast, reload }: {
             <InfoRow label="Active number">
                 {ov.online
                     ? (sim.activeNumber ? fmtPhone(sim.activeNumber) : <Badge tone="amber">No SIM / no phone</Badge>)
-                    : <span className="text-zinc-500">offline</span>}
+                    : <span className="text-adm-3">offline</span>}
             </InfoRow>
             {ov.online && (sim.carried?.length ?? 0) > 0 && (
                 <InfoRow label="Carrying">
                     <span className="flex flex-wrap justify-end gap-1.5">
                         {sim.carried!.map(cs => (
-                            <span key={cs.number} className="inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-0.5 text-[12px]">
-                                <span className="capitalize text-zinc-400">{cs.color}</span>
+                            <span key={cs.number} className="inline-flex items-center gap-1 rounded-md bg-adm-surface-2 px-2 py-0.5 text-[12px]">
+                                <span className="capitalize text-adm-2">{cs.color}</span>
                                 <span className="font-mono">{fmtPhone(cs.number)}</span>
                                 {cs.active && <Badge tone="green">active</Badge>}
                             </span>
@@ -366,7 +366,7 @@ function SimCard({ ov, toast, reload }: {
                 {sim.backup
                     ? <span className="inline-flex items-center gap-1.5">
                         {sim.backup.enabled ? <Badge tone="green">On</Badge> : <Badge>Off</Badge>}
-                        <span className="font-mono text-[12px] text-zinc-500">{sim.backup.profiles} phone{sim.backup.profiles === 1 ? '' : 's'}</span>
+                        <span className="font-mono text-[12px] text-adm-3">{sim.backup.profiles} phone{sim.backup.profiles === 1 ? '' : 's'}</span>
                         {sim.backup.hasPassword && <Badge>password set</Badge>}
                     </span>
                     : 'Never enabled'}
@@ -375,7 +375,7 @@ function SimCard({ ov, toast, reload }: {
             {sim.sims.length > 0 ? (
                 <table className="w-full text-start text-[12.5px]">
                     <thead>
-                        <tr className="border-t border-white/[0.05] text-[10.5px] uppercase tracking-wide text-zinc-500">
+                        <tr className="border-t border-adm-hair text-[10.5px] text-adm-3">
                             <th className="px-4 py-2 font-semibold">Number</th>
                             <th className="px-4 py-2 font-semibold">Profile</th>
                             <th className="px-4 py-2 font-semibold">First activated by</th>
@@ -384,23 +384,23 @@ function SimCard({ ov, toast, reload }: {
                     </thead>
                     <tbody>
                         {sim.sims.map(row => (
-                            <tr key={row.number} className="border-t border-white/[0.05]">
-                                <td className="px-4 py-2 font-mono text-zinc-200">{fmtPhone(row.number)}</td>
+                            <tr key={row.number} className="border-t border-adm-hair">
+                                <td className="px-4 py-2 font-mono text-adm-1">{fmtPhone(row.number)}</td>
                                 <td className="px-4 py-2">
                                     {row.identity === ov.citizenid
                                         ? <Badge tone="green">original profile</Badge>
-                                        : <span className="font-mono text-[11.5px] text-zinc-400">{row.identity}</span>}
+                                        : <span className="font-mono text-[11.5px] text-adm-2">{row.identity}</span>}
                                 </td>
-                                <td className="px-4 py-2 font-mono text-[11.5px] text-zinc-400">
-                                    {row.ownerCid === ov.citizenid ? 'this character' : (row.ownerCid ?? '—')}
+                                <td className="px-4 py-2 font-mono text-[11.5px] text-adm-2">
+                                    {row.ownerCid === ov.citizenid ? 'this character' : (row.ownerCid ?? '-')}
                                 </td>
-                                <td className="px-4 py-2 text-zinc-400">{fmtTime(row.createdAt)}</td>
+                                <td className="px-4 py-2 text-adm-2">{fmtTime(row.createdAt)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             ) : (
-                <div className="px-4 py-3 text-[13px] text-zinc-500">No SIMs registered to this character yet.</div>
+                <div className="px-4 py-3 text-[13px] text-adm-3">No SIMs registered to this character yet.</div>
             )}
 
             {confirmBind !== null && (
@@ -437,14 +437,14 @@ function AppsTab({ ov, onChanged, toast }: {
     };
 
     return (
-        <Card title="Downloadable apps" actions={<span className="text-[11.5px] text-zinc-600">Base apps are always installed and can’t be managed</span>}>
+        <Card title="Downloadable apps" actions={<span className="text-[11.5px] text-adm-4">Base apps are always installed and can’t be managed</span>}>
             <div className="grid grid-cols-2">
                 {ov.downloadable.map(app => {
                     const has = installed.has(app.id);
                     return (
-                        <div key={app.id} className="flex items-center justify-between gap-3 border-t border-white/[0.05] px-4 py-2.5 text-[13px] odd:border-e">
+                        <div key={app.id} className="flex items-center justify-between gap-3 border-t border-adm-hair px-4 py-2.5 text-[13px] odd:border-e">
                             <div className="flex items-center gap-2">
-                                <span className="font-semibold text-zinc-200">{app.label}</span>
+                                <span className="font-semibold text-adm-1">{app.label}</span>
                                 {has && <Badge tone="green">Installed</Badge>}
                             </div>
                             <Btn
@@ -478,14 +478,14 @@ function AccountsTab({ ov, toast, onReset }: {
             title="App accounts"
             actions={<Btn variant="ghost" onClick={() => void logout()}><LogOut size={13} /> Log out of all apps</Btn>}
         >
-            {ov.accounts.length === 0 && <div className="px-4 py-4 text-[13px] text-zinc-500">Not signed into any app accounts.</div>}
+            {ov.accounts.length === 0 && <div className="px-4 py-4 text-[13px] text-adm-3">Not signed into any app accounts.</div>}
             {ov.accounts.map(a => (
-                <div key={a.id} className="flex items-center justify-between gap-3 border-t border-white/[0.05] px-4 py-2.5 text-[13px] first:border-t-0">
+                <div key={a.id} className="flex items-center justify-between gap-3 border-t border-adm-hair px-4 py-2.5 text-[13px] first:border-t-0">
                     <div className="flex min-w-0 items-center gap-3">
                         <Badge tone="blue" className="capitalize">{a.app}</Badge>
                         <div className="min-w-0">
-                            <div className="truncate font-semibold text-zinc-100">{a.username}</div>
-                            <div className="truncate text-[11.5px] text-zinc-500">
+                            <div className="truncate font-semibold text-adm-1">{a.username}</div>
+                            <div className="truncate text-[11.5px] text-adm-3">
                                 {a.displayName}{a.email ? ` · ${a.email}` : ''}{a.createdAt ? ` · created ${fmtTime(a.createdAt)}` : ''}
                             </div>
                         </div>
@@ -548,19 +548,15 @@ function BirdyTab({ ov, onChanged, toast }: {
                 return (
                     <Card key={b.handle} className="flex items-center justify-between gap-3 px-4 py-3">
                         <div className="flex min-w-0 items-center gap-2 text-[13px]">
-                            <span className="truncate font-bold text-zinc-100">{b.displayName}</span>
+                            <span className="truncate font-semibold text-adm-1">{b.displayName}</span>
                             {current && <BadgeCheck size={14} style={{ color: BADGE_TINT[current] ?? BADGE_TINT.blue }} />}
-                            <span className="truncate text-zinc-500">@{b.handle}</span>
+                            <span className="truncate text-adm-3">@{b.handle}</span>
                         </div>
                         <div className="flex shrink-0 gap-1">
                             {BADGE_OPTIONS.map(o => (
-                                <Btn
-                                    key={o.label}
-                                    variant={current === o.key ? 'primary' : 'ghost'}
-                                    onClick={() => void setVerified(b, o.key)}
-                                >
+                                <Toggle key={o.label} on={current === o.key} onClick={() => void setVerified(b, o.key)}>
                                     {o.label}
-                                </Btn>
+                                </Toggle>
                             ))}
                         </div>
                     </Card>
@@ -603,7 +599,7 @@ function MessagesTab({ cid }: { cid: string }) {
         <Card title="Messages (read-only)">
             <table className="w-full text-start text-[13px]">
                 <thead>
-                    <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+                    <tr className="text-[11px] text-adm-3">
                         <th className="px-4 py-2.5 font-semibold">When</th>
                         <th className="px-4 py-2.5 font-semibold">Conversation</th>
                         <th className="px-4 py-2.5 font-semibold">Dir</th>
@@ -613,17 +609,17 @@ function MessagesTab({ cid }: { cid: string }) {
                 </thead>
                 <tbody>
                     {items.map(m => (
-                        <tr key={m.id} className="border-t border-white/[0.05]">
-                            <td className="whitespace-nowrap px-4 py-2 text-zinc-500">{fmtTime(m.createdAt)}</td>
-                            <td className="px-4 py-2 font-mono text-[12px] text-zinc-400">
+                        <tr key={m.id} className="border-t border-adm-hair">
+                            <td className="whitespace-nowrap px-4 py-2 text-adm-3">{fmtTime(m.createdAt)}</td>
+                            <td className="px-4 py-2 font-mono text-[12px] text-adm-2">
                                 {m.conversation.startsWith('g-') ? m.conversation : fmtPhone(m.conversation)}
                             </td>
                             <td className="px-4 py-2">
                                 <Badge tone={m.direction === 'outgoing' ? 'blue' : 'neutral'}>{m.direction}</Badge>
                             </td>
-                            <td className="px-4 py-2 text-zinc-500">{m.kind}</td>
-                            <td className="max-w-[340px] truncate px-4 py-2 text-zinc-300" title={m.body ?? ''}>
-                                {m.body || <span className="italic text-zinc-600">({m.kind})</span>}
+                            <td className="px-4 py-2 text-adm-3">{m.kind}</td>
+                            <td className="max-w-[340px] truncate px-4 py-2 text-adm-2" title={m.body ?? ''}>
+                                {m.body || <span className="italic text-adm-4">({m.kind})</span>}
                             </td>
                         </tr>
                     ))}
@@ -645,13 +641,13 @@ function CallsTab({ cid }: { cid: string }) {
 
     const { items, loading, hasMore, loadMore } = usePaged<AdminCall, string>(fetchPage, `calls:${cid}`);
 
-    const fmtDur = (secs: number) => secs <= 0 ? '—' : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    const fmtDur = (secs: number) => secs <= 0 ? '-' : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
 
     return (
         <Card title="Call log (read-only)">
             <table className="w-full text-start text-[13px]">
                 <thead>
-                    <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+                    <tr className="text-[11px] text-adm-3">
                         <th className="px-4 py-2.5 font-semibold">When</th>
                         <th className="px-4 py-2.5 font-semibold">Number</th>
                         <th className="px-4 py-2.5 font-semibold">Saved as</th>
@@ -661,16 +657,16 @@ function CallsTab({ cid }: { cid: string }) {
                 </thead>
                 <tbody>
                     {items.map(call => (
-                        <tr key={call.id} className="border-t border-white/[0.05]">
-                            <td className="whitespace-nowrap px-4 py-2 text-zinc-500">{fmtTime(call.calledAt)}</td>
-                            <td className="px-4 py-2 text-zinc-300">{fmtPhone(call.number)}</td>
-                            <td className="px-4 py-2 text-zinc-400">{call.name ?? '—'}</td>
+                        <tr key={call.id} className="border-t border-adm-hair">
+                            <td className="whitespace-nowrap px-4 py-2 text-adm-3">{fmtTime(call.calledAt)}</td>
+                            <td className="px-4 py-2 text-adm-2">{fmtPhone(call.number)}</td>
+                            <td className="px-4 py-2 text-adm-2">{call.name ?? '-'}</td>
                             <td className="px-4 py-2">
                                 <Badge tone={call.direction === 'missed' ? 'red' : call.direction === 'outgoing' ? 'blue' : 'neutral'}>
                                     {call.direction}
                                 </Badge>
                             </td>
-                            <td className="px-4 py-2 text-zinc-400">{fmtDur(call.duration)}</td>
+                            <td className="px-4 py-2 text-adm-2">{fmtDur(call.duration)}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -696,17 +692,17 @@ function ModerationTab({ ov, setMutes, toast }: {
     return (
         <div className="grid grid-cols-2 gap-4">
             <Card title="Active mutes">
-                {ov.mutes.length === 0 && <div className="px-4 py-4 text-[13px] text-zinc-500">No active mutes.</div>}
+                {ov.mutes.length === 0 && <div className="px-4 py-4 text-[13px] text-adm-3">No active mutes.</div>}
                 {ov.mutes.map(m => (
-                    <div key={m.scope} className="flex items-center justify-between gap-3 border-t border-white/[0.05] px-4 py-2.5 text-[13px] first:border-t-0">
+                    <div key={m.scope} className="flex items-center justify-between gap-3 border-t border-adm-hair px-4 py-2.5 text-[13px] first:border-t-0">
                         <div>
                             <div className="flex items-center gap-2">
                                 <Badge tone="amber">{scopeLabel(m.scope)}</Badge>
                                 {m.expiresAt
-                                    ? <span className="text-[11.5px] text-zinc-500">until {fmtTime(m.expiresAt)}</span>
+                                    ? <span className="text-[11.5px] text-adm-3">until {fmtTime(m.expiresAt)}</span>
                                     : <Badge tone="red">Permanent</Badge>}
                             </div>
-                            <div className="mt-0.5 text-[11.5px] text-zinc-500">
+                            <div className="mt-0.5 text-[11.5px] text-adm-3">
                                 {m.reason || 'No reason'} · by {m.adminName}
                             </div>
                         </div>

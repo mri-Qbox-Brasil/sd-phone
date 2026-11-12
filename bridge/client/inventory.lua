@@ -8,10 +8,29 @@ local inventoryId  = require 'bridge.shared.inventory_id'
 ---display-metadata feature.
 local inventory = { system = inventoryId.name }
 
+---@type boolean True on AI Core, where lookups go through ai-core's inventory layer, which answers
+---for whichever inventory the server runs.
+local ON_LAYER = framework.aicore == true
+
+---An item's definition from ai-core's inventory layer, nil when it has none.
+---@param item string
+---@return table|nil
+local function layerDefinition(item)
+    local ok, def = pcall(exports['ai-core'].GetItemDefinition, exports['ai-core'], item)
+    return (ok and type(def) == 'table') and def or nil
+end
+
 ---Picks the image-path resolver for the active inventory, once at module load. With no inventory
 ---detected, every lookup resolves to nil.
 ---@return fun(item: string): string|nil
 local function chooseImageResolver()
+    if ON_LAYER then
+        return function(item)
+            local def = layerDefinition(item)
+            return def and def.image or nil
+        end
+    end
+
     local active = inventoryId.name
     if not active then return function() return nil end end
 
@@ -104,6 +123,13 @@ end
 ---qb-core's Shared.Items table when no supported inventory export exists, then to a constant nil.
 ---@return fun(itemName: string): string|nil
 local function chooseLabelResolver()
+    if ON_LAYER then
+        return function(itemName)
+            local def = layerDefinition(itemName)
+            return def and def.label or nil
+        end
+    end
+
     local active = inventoryId.name
     if active == 'ox_inventory' or active == 'tgiann-inventory' then
         return function(itemName)
@@ -162,6 +188,14 @@ end
 ---walking the framework's own player-data item list, then to a constant 0.
 ---@return fun(item: string): number
 local function chooseCountResolver()
+    if ON_LAYER then
+        return function(item)
+            -- A null answer arrives as no value at all, which tonumber() rejects, so it goes through a local.
+            local count = exports['ai-core']:GetItemCount(item)
+            return tonumber(count) or 0
+        end
+    end
+
     local active = inventoryId.name
 
     if active == 'ox_inventory' then

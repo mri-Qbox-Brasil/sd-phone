@@ -127,6 +127,8 @@ require 'server.compat.qssmartphone.init'
 require 'server.compat.gksphone.init'
 -- roadphone export compatibility shim (sd_phone_roadphonecompat kill switch).
 require 'server.compat.roadphone.init'
+-- qb-phone event and export compatibility shim (sd_phone_qbphonecompat kill switch).
+require 'server.compat.qbphone.init'
 
 ---@type table SIM feature flags (server.sim.state): active + mode.
 local simState = require 'server.sim.state'

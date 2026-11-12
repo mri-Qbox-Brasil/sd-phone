@@ -181,7 +181,9 @@ function actions.overview(source, payload)
     local cid = cleanCid(payload and payload.cid)
     if not cid then return fail('admin.missingPlayer', 'Missing player') end
 
-    local data = store.playerOverview(cid) or {}
+    -- A character can have SIMs without a phone profile of their own. Keep the account lists
+    -- present so the detail page can still show their SIMs and moderation controls.
+    local data = store.playerOverview(cid) or { accounts = {}, birdy = {} }
     local names, online = resolveNames({ cid })
     data.citizenid = cid
     data.name      = names[cid]

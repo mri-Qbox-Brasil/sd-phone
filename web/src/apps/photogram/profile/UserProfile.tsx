@@ -6,29 +6,39 @@ import { useIosPush } from '@/hooks/useIosPush';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { IG, type Post, type User } from '../data';
 import { MediaThumb } from '../create/Media';
-import { apiProfile, apiProfilePosts, apiToggleFollow, type FollowStatus, type ProfileView } from '../photogramApi';
+import { apiProfile, apiProfilePosts, apiToggleFollow, apiUserStories, type FollowStatus, type ProfileView, type StoryGroup } from '../photogramApi';
 import { EmptyGrid, fmtCount } from './Profile';
 import { VerifiedCheck } from '../ui';
+import { StoryAvatar } from '../stories/StoryAvatar';
 import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
-export function UserProfile({ handle, me: _me, onBack, onOpenProfile: _onOpenProfile, onOpenPost, onOpenFollows, onChanged, animateIn = true }: {
+export function UserProfile({ handle, me: _me, onBack, onOpenProfile: _onOpenProfile, onOpenPost, onOpenFollows, onOpenStory, onChanged, storyNonce = 0, animateIn = true }: {
     handle:        string;
     me:            User;
     onBack:        () => void;
     onOpenProfile: (handle: string) => void;
     onOpenPost:    (p: Post) => void;
     onOpenFollows: (handle: string, kind: 'followers' | 'following') => void;
+    onOpenStory:   (story: StoryGroup) => void;
     onChanged?:    () => void;
+    storyNonce?:   number;
     animateIn?:    boolean;
 }) {
     const { goBack, pageStyle } = useIosPush(onBack, animateIn);
     const [profile, setProfile] = useState<ProfileView | null>(null);
     const [posts,   setPosts]   = useState<Post[]>([]);
+    const [story,   setStory]   = useState<StoryGroup | null>(null);
     const [busy,    setBusy]    = useState(false);
 
     useEffect(() => {
         let alive = true;
-        setProfile(null); setPosts([]);
+        void apiUserStories(handle).then(s => { if (alive) setStory(s); });
+        return () => { alive = false; };
+    }, [handle, storyNonce]);
+
+    useEffect(() => {
+        let alive = true;
+        setProfile(null); setPosts([]); setStory(null);
         void apiProfile(handle).then(p => { if (alive) setProfile(p); });
         void apiProfilePosts(handle).then(ps => { if (alive) setPosts(ps); });
         return () => { alive = false; };
@@ -44,7 +54,10 @@ export function UserProfile({ handle, me: _me, onBack, onOpenProfile: _onOpenPro
             const delta = (nowAccepted && !wasAccepted) ? 1 : (wasAccepted && !nowAccepted ? -1 : 0);
             return { ...prev, followStatus: status, followers: prev.followers + delta, locked: prev.isPrivate && !nowAccepted };
         });
-        if (status === 'accepted') void apiProfilePosts(handle).then(setPosts);
+        if (status === 'accepted') {
+            void apiProfilePosts(handle).then(setPosts);
+            void apiUserStories(handle).then(setStory);
+        }
         onChanged?.();
     }, [handle, onChanged]));
 
@@ -55,7 +68,10 @@ export function UserProfile({ handle, me: _me, onBack, onOpenProfile: _onOpenPro
         const status = await apiToggleFollow(handle);
         const delta = (status === 'accepted' && !wasAccepted) ? 1 : (wasAccepted && status !== 'accepted' ? -1 : 0);
         setProfile(prev => prev ? { ...prev, followStatus: status, followers: prev.followers + delta, locked: prev.isPrivate && status !== 'accepted' } : prev);
-        if (status === 'accepted' && profile.locked) void apiProfilePosts(handle).then(setPosts);
+        if (status === 'accepted' && profile.locked) {
+            void apiProfilePosts(handle).then(setPosts);
+            void apiUserStories(handle).then(setStory);
+        }
         setBusy(false);
         onChanged?.();
     }
@@ -85,7 +101,11 @@ export function UserProfile({ handle, me: _me, onBack, onOpenProfile: _onOpenPro
             ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
                     <div className="flex items-center gap-6 px-4 py-3">
-                        <img src={profile.avatar} alt="" draggable={false} className="h-[108px] w-[108px] rounded-full object-cover" />
+                        <StoryAvatar
+                            src={profile.avatar}
+                            story={profile.locked ? null : story}
+                            onOpen={s => { onOpenStory(s); setStory(prev => prev && { ...prev, seen: true }); }}
+                        />
                         <div className="flex flex-1 justify-around text-center">
                             <Stat n={profile.posts} label={t('photogram.posts', 'Posts')} />
                             <Stat n={fmtCount(profile.followers)} label={t('photogram.followers', 'Followers')} onClick={profile.locked ? undefined : () => onOpenFollows(profile.username, 'followers')} />

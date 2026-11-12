@@ -4,7 +4,7 @@ local config   = require 'configs.config'
 local store    = require 'server.services.store'
 ---@type table Company inbox store (server.services.msgstore): shared (job, customer) message rows + read state.
 local msgstore = require 'server.services.msgstore'
----@type table Saved-jobs store (server.services.jobstore): phone multijob list, job offers, pending fires.
+---@type table Saved-jobs store (server.services.jobstore): character multijob list, job offers, pending fires.
 local jobstore = require 'server.services.jobstore'
 ---@type table Society bridge (bridge.server.society): company balance, grade ladders, roster, hire/fire.
 local society  = require 'bridge.server.society'
@@ -13,6 +13,10 @@ local bank     = require 'bridge.server.banking'
 ---@type table Job bridge (bridge.server.job): current job/grade/duty reads + SetJob/SetJobDuty writes.
 local job      = require 'bridge.server.job'
 ---@type table Player bridge (bridge.server.player): citizenid/name/source lookups.
+---
+---Employment (boss checks, the roster, saved jobs, offers, fires) is read with getRealIdentifier:
+---under unique phones getIdentifier returns the acting SIM identity, and a job belongs to the
+---character. The per-phone toggles and the company inbox stay on getIdentifier.
 local player   = require 'bridge.server.player'
 ---@type table Settings store (server.settings.store): phone-number ownership lookups.
 local settings = require 'server.settings.store'
@@ -116,7 +120,7 @@ end
 ---@return string|nil citizenid nil when the caller is refused
 ---@return table|nil refusal failure envelope, set only when jobName is nil
 local function requireBoss(src)
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return nil, nil, fail('services.playerNotFound', 'Player not found') end
     local myJob = job.getName(src)
     if not myJob or BLACKLIST[myJob] then return nil, nil, fail('services.reNotJob', "You're not in a job") end
@@ -164,7 +168,8 @@ local function buildMyCompany(src)
         local gradeMap = {}
         for _, g in ipairs(mc.grades) do gradeMap[g.level] = g.label end
 
-        local online = player.onlineCidMap()
+        local realCid = player.getRealIdentifier(src)
+        local online  = player.onlineRealCidMap()
 
         local byCid, order = {}, {}
         local function ensure(ecid)
@@ -209,7 +214,7 @@ local function buildMyCompany(src)
                 grade  = grade,
                 status = status,
                 online = esrc ~= nil,
-                self   = ecid == cid or nil,
+                self   = ecid == realCid or nil,
             }
             ::continue::
         end
@@ -324,7 +329,7 @@ end
 ---`pendingOffers`. Read-only.
 ---@param src number
 function actions.directory(src)
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     return ok({
         companies       = companiesByAvailability(),
         myCompany       = buildMyCompany(src),
@@ -448,7 +453,7 @@ function actions.hire(src, payload)
     local grade = math.max(0, math.floor(tonumber(payload.grade) or 0))
     if grade >= job.getGrade(src) then return fail('services.canTHireSomeoneAbove', "You can't hire someone at or above your own rank") end
 
-    local targetCid = player.getIdentifier(targetId)
+    local targetCid = player.getRealIdentifier(targetId)
     if not targetCid then return fail('services.noPlayerWithIdOnline', 'No player with that ID is online') end
     if targetCid == cid then return fail('services.canTHireYourself', "You can't hire yourself") end
     if jobstore.getSaved(targetCid)[myJob] then return fail('services.theyAlreadyWorkHere', 'They already work here') end
@@ -488,10 +493,32 @@ local function memberInfo(myJob, targetCid)
     local savedGrade = saved and math.floor(tonumber(saved.grade) or 0) or nil
     if fwGrade == nil and savedGrade == nil then return nil end
 
-    local tsrc       = player.getSourceByIdentifier(targetCid)
+    local tsrc       = player.getSourceByRealIdentifier(targetCid)
     local activeHere = tsrc ~= nil and job.getName(tsrc) == myJob
     local grade      = activeHere and (fwGrade or savedGrade or 0) or (savedGrade or fwGrade or 0)
     return { src = tsrc, online = tsrc ~= nil, activeHere = activeHere, grade = grade, fw = fwGrade ~= nil, saved = savedGrade ~= nil }
+end
+
+---Takes a member out of `jobName`: framework fire when they are working it now, else a pending
+---fire for their next load (removed at once where the framework can); the saved entry goes either
+---way and the roster refreshes.
+---@param jobName string
+---@param targetCid string
+---@param info table memberInfo(jobName, targetCid)
+---@return boolean ok false when the framework refused the online fire
+local function dismiss(jobName, targetCid, info)
+    if info.activeHere then
+        if not society.fire(targetCid, UNEMPLOYED, jobName) then return false end
+        if info.saved then jobstore.removeSaved(targetCid, jobName) end
+    else
+        if info.saved then jobstore.removeSaved(targetCid, jobName) end
+        if info.fw and not society.dropMembership(targetCid, jobName) then
+            jobstore.addPendingFire(targetCid, jobName)
+        end
+        if info.src then TriggerClientEvent('sd-phone:client:services:jobsChanged', info.src, {}) end
+    end
+    actions.notifyRoster(jobName)
+    return true
 end
 
 ---Removes an employee from the caller's company (boss-only, self-fire blocked, rank-gated):
@@ -511,17 +538,20 @@ function actions.fire(src, payload)
     if not info then return fail('services.employeeNotFound', 'Employee not found') end
     if info.grade >= job.getGrade(src) then return fail('services.canTFireSomeoneEqual', "You can't fire someone of equal or higher rank") end
 
-    if info.activeHere then
-        if not society.fire(targetCid, UNEMPLOYED, myJob) then return fail('services.playerMustOnlineFired', 'That player must be online to be fired') end
-        if info.saved then jobstore.removeSaved(targetCid, myJob) end
-    else
-        if info.saved then jobstore.removeSaved(targetCid, myJob) end
-        if info.fw then jobstore.addPendingFire(targetCid, myJob) end
-        if info.src then TriggerClientEvent('sd-phone:client:services:jobsChanged', info.src, {}) end
-    end
-
-    actions.notifyRoster(myJob)
+    if not dismiss(myJob, targetCid, info) then return fail('services.playerMustOnlineFired', 'That player must be online to be fired') end
     return ok({ myCompany = buildMyCompany(src) })
+end
+
+---Fires a character from a job with no boss or rank checks, for the fireEmployee export. Returns
+---false when they hold no such job here, or the framework refused an online fire.
+---@param targetCid string framework character id
+---@param jobName string framework job name
+---@return boolean
+function actions.fireEmployee(targetCid, jobName)
+    if BLACKLIST[jobName] then return false end
+    local info = memberInfo(jobName, targetCid)
+    if not info then return false end
+    return dismiss(jobName, targetCid, info)
 end
 
 ---Promotes an employee one grade up the company's ladder, kept below the caller's own rank:
@@ -625,7 +655,7 @@ end
 ---@param src number
 ---@return table
 function actions.quit(src)
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return fail('services.playerNotFound', 'Player not found') end
     local myJob = job.getName(src)
     if not myJob or BLACKLIST[myJob] then return fail('services.reNotJob', "You're not in a job") end
@@ -946,7 +976,7 @@ local srcToCid = {}
 ---syncs the active job's grade to the saved grade, or seeds a missing saved entry; caches src -> cid.
 ---@param src number
 function actions.reconcileJobs(src)
-    local cid = player.getIdentifier(src)
+    local cid = player.getRealIdentifier(src)
     if not cid then return end
     srcToCid[src] = cid
 

@@ -448,7 +448,7 @@ export type NuiMessage =
     | { action: 'sd-phone:documents:added';    data: { doc: DocFile } }
     | { action: 'sd-phone:documents:receive';  data: { doc: DocFile; fromName?: string } }
     | { action: 'sd-phone:documents:signRequest'; data: { requestId: string; fromName: string; doc: DocFile } }
-    | { action: 'sd-phone:voice:uploadFailed'; data: { message?: string } }
+    | { action: 'sd-phone:voice:uploadFailed'; data: { message?: string; messageKey?: string } }
     | { action: 'sd-phone:contacts:shared';    data: { id: string; name: string; phone: string; color: string; initials: string; avatar?: string } }
     | { action: 'sd-phone:contacts:removed';   data: { phone: string } }
     | { action: 'sd-phone:messages:incoming';  data: MessagesIncomingPush }
@@ -464,6 +464,7 @@ export type NuiMessage =
     | { action: 'sd-phone:cherry:partner';     data: { username: string; partner: unknown } }
     | { action: 'sd-phone:photogram:notification' }
     | { action: 'sd-phone:photogram:dmReceived'; data: { peer: string; user: PhotogramUser; message: PhotogramDM } }
+    | { action: 'sd-phone:photogram:openProfile'; data: { handle: string } }
     | { action: 'sd-phone:photogram:dmReaction'; data: { peer: string; id: string; reactions: Reaction[] } }
     | { action: 'sd-phone:photogram:postChanged'; data: { postId: string; likes?: number; comments?: number; comment?: unknown } }
     | { action: 'sd-phone:photogram:feedChanged' }
@@ -554,7 +555,7 @@ export type NuiMessage =
     | { action: 'sd-phone:notification';       data: { id?: string; app?: string; image?: string; titleKey?: string; title: string; titleVars?: Record<string, string | number>; bodyKey?: string; body?: string; bodyVars?: Record<string, string | number>; time?: string; appId?: string; quietInApp?: boolean; emergency?: boolean; otherPhone?: boolean; phoneColor?: string; profileKey?: string; link?: Record<string, unknown> } }
     | { action: 'sd-phone:badges';             data: Record<string, number> }
     | { action: 'sd-phone:badges:patch';       data: Record<string, number> }
-    | { action: 'sd-phone:airshare';           data: { id: string; kind: string; fromName: string } }
+    | { action: 'sd-phone:airshare';           data: { id: string; kind: string; fromName: string; detail?: string } }
     | { action: 'sd-phone:maps:friends:update'; data: FriendsUpdatePush }
     | { action: 'sd-phone:maps:location';       data: { x: number; y: number; h: number } }
     | { action: 'sd-phone:maps:calibrate';      data: { on: boolean } }

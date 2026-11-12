@@ -8,6 +8,7 @@ import { Layers, Locate, Minus, Plus } from 'lucide-react';
 import { getMapStyles, loadStyleId, MAX_NATIVE_PX, pctToWorld, projectPct, saveStyleId, styleMaxZoom, stylePx, tileUrl } from './data';
 import type { MapStyle, MapStyleId } from './data';
 import { t } from '@/i18n';
+import { localPoint } from '@/lib/zoom';
 
 const MIN_SCALE = 1;
 const OVERZOOM = 0.7;
@@ -154,13 +155,8 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         };
     }, [side, insetBottom, insetTop]);
 
-    const zoomAround = useCallback((clientX: number, clientY: number, nextScale: number) => {
-        const vp = viewportRef.current;
-        if (!vp) return;
-        const rect = vp.getBoundingClientRect();
-        const z = ancestorZoom(vp);
-        const cx = (clientX / z - rect.left) - vw / 2;
-        const cy = (clientY / z - rect.top)  - vh / 2;
+    // Zoom keeping the map point at (cx, cy) where it is: offsets from the viewport's centre, in its own pixels.
+    const zoomAt = useCallback((cx: number, cy: number, nextScale: number) => {
         const view = viewRef.current;
         const s = Math.max(minScale, Math.min(maxScaleFor(side), nextScale));
         if (s === view.scale) return;
@@ -168,7 +164,15 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         const c = clampPan(cx - (cx - view.tx) * ratio, cy - (cy - view.ty) * ratio, s);
         viewRef.current = { scale: s, tx: c.x, ty: c.y };
         setScale(s); setTx(c.x); setTy(c.y);
-    }, [clampPan, vw, vh, minScale, side]);
+    }, [clampPan, minScale, side]);
+
+    // Zoom keeping the map point under the pointer (screen coordinates) under it.
+    const zoomAround = useCallback((clientX: number, clientY: number, nextScale: number) => {
+        const vp = viewportRef.current;
+        if (!vp) return;
+        const p = localPoint(vp, clientX, clientY);
+        zoomAt(p.x - vw / 2, p.y - vh / 2, nextScale);
+    }, [zoomAt, vw, vh]);
 
     const lastWheelStep = useRef(0);
 
@@ -189,11 +193,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         return () => el.removeEventListener('wheel', onWheel);
     }, []);
     function buttonZoom(dir: 1 | -1) {
-        const vp = viewportRef.current;
-        if (!vp) return;
-        const rect = vp.getBoundingClientRect();
-        const z = ancestorZoom(vp);
-        zoomAround((rect.left + rect.width / 2) * z, (rect.top + rect.height / 2) * z, stepScale(dir));
+        zoomAt(0, 0, stepScale(dir));
     }
     function resetView() { setScale(1); setTx(0); setTy(0); }
 
@@ -319,16 +319,11 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         if (wasPinch) {
             gesture.current.pinchDist = 0;
             setPinching(false);
-            const vp = viewportRef.current;
-            if (vp) {
-                const rect = vp.getBoundingClientRect();
-                const az = ancestorZoom(vp);
-                const live = pendingZoom.current?.scale ?? scale;
-                const snapped = live <= Math.sqrt(minScale)
-                    ? minScale
-                    : snapLevel(Math.log2(live), side);
-                zoomAround((rect.left + rect.width / 2) * az, (rect.top + rect.height / 2) * az, snapped);
-            }
+            const live = pendingZoom.current?.scale ?? scale;
+            const snapped = live <= Math.sqrt(minScale)
+                ? minScale
+                : snapLevel(Math.log2(live), side);
+            zoomAt(0, 0, snapped);
             const rest = [...pointers.current.values()][0];
             if (rest) {
                 gesture.current = { ...gesture.current, startX: rest.x, startY: rest.y, tx, ty };
@@ -338,10 +333,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         if (wasTap && placing && onPlace) {
             const vp = viewportRef.current;
             if (!vp || !vp.clientWidth) return;
-            const vpRect = vp.getBoundingClientRect();
-            const z = ancestorZoom(vp);
-            const localX = e.clientX / z - vpRect.left;
-            const localY = e.clientY / z - vpRect.top;
+            const { x: localX, y: localY } = localPoint(vp, e.clientX, e.clientY);
             const rawL = (((localX - vw / 2 - tx) / scale + side / 2) / side) * 100;
             const rawT = (((localY - vh / 2 - ty) / scale + side / 2) / side) * 100;
             const leftPct = Math.max(0, Math.min(100, rawL));
@@ -518,6 +510,12 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             {chrome && (
             <div className="absolute start-3 z-20 rounded-full bg-black/60 px-2.5 py-1 text-[12px] font-bold tracking-[0.06em] text-white/95" style={{ bottom: chromeBottom ?? '12px', transition: 'bottom 300ms cubic-bezier(0.22,0.61,0.36,1)' }}>
                 {Math.round(scale * 100)}%
+            </div>
+            )}
+
+            {chrome && style.credit && (
+            <div className="pointer-events-none absolute end-3 z-20 rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-medium text-white/75" style={{ bottom: chromeBottom ?? '12px', transition: 'bottom 300ms cubic-bezier(0.22,0.61,0.36,1)' }}>
+                {style.credit}
             </div>
             )}
 

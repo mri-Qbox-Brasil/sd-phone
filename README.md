@@ -112,7 +112,7 @@ Captured from the browser demo using sample data. Click an image for the full 19
 
 - **Real accounts.** Social apps have registration, sign-in and password resets delivered by in-game mail or SMS, and accounts work across characters.
 - **A live camera.** The Camera shows the game world in real time, clips record your microphone and nearby voices, and Photogram Live streams real video to other phones.
-- **Plugged into your server.** Garages and Homes work with 14 garage and 12 housing systems, Wallet reads your framework's bank, and Services turns jobs into companies players can call and message.
+- **Plugged into your server.** Garages and Homes work with 14 garage and 13 housing systems, Wallet reads your framework's bank, and Services turns jobs into companies players can call and message.
 - **Custom apps.** One export turns any web page into an installable app, and apps built for lb-phone run unmodified. Start from the [app templates](https://github.com/Samuels-Development/sd-phone-app-templates) and the [custom app guide](https://docs.samueldev.shop/resources/phone/custom-apps).
 - **Drop-in compatible.** Scripts written for lb-phone, qs-smartphone, gksphone, roadphone or YSeries keep working: their exports are answered and their events mirrored. [Details](https://docs.samueldev.shop/resources/phone/lb-phone-compatibility)
 
@@ -138,7 +138,7 @@ With both running, a computer becomes another screen for the character's phone: 
 | Frameworks | QBCore, QBox, ESX, ox_core, ND (auto-detected) |
 | Inventories | ox_inventory, one_inventory, tgiann-inventory, qb-inventory, qs-inventory(-pro), origen_inventory, codem-inventory, jaksam_inventory, lj-inventory, ps-inventory |
 | Voice | pma-voice |
-| Housing | 12 housing systems for the Homes app |
+| Housing | 13 housing systems for the Homes app |
 | Garages | 14 garage systems for the Garages app, plus ND_Core as the fallback on ND |
 | Notify | ox_lib (default), lation_ui (opt-in), framework-native fallback |
 

@@ -74,7 +74,7 @@ lib.callback.register('sd-phone:server:voice:uploadSlot', function(src, payload)
     payload = type(payload) == 'table' and payload or {}
 
     local p = promise.new()
-    presign.mint(src, { maxBytes = MAX_DIRECT_BYTES },
+    presign.mint(src, { maxBytes = MAX_DIRECT_BYTES, kinds = { audio = true }, purpose = 'voice-memo' },
         function(url, code) p:resolve({ url = url, code = code }) end)
     local res = Citizen.Await(p)
     if not res.url then return { success = false, code = res.code or 'provider' } end
@@ -93,7 +93,7 @@ lib.callback.register('sd-phone:server:voice:uploadDone', function(src, payload)
     payload = type(payload) == 'table' and payload or {}
 
     local p = promise.new()
-    presign.claim(src, payload.url, { maxBytes = MAX_DIRECT_BYTES, kinds = { audio = true } },
+    presign.claim(src, payload.url, { maxBytes = MAX_DIRECT_BYTES, kinds = { audio = true }, purpose = 'voice-memo' },
         function(url, code, bytes) p:resolve({ url = url, code = code, bytes = bytes }) end)
     local res = Citizen.Await(p)
     if not res.url then
@@ -115,9 +115,9 @@ util.onCleanup(function(src) pendingDirect[src] = nil end)
 ---@param why string|nil 'cooldown'|'busy'|'identity'|'budget'|'server'
 ---@return string message
 local function refusal(why)
-    if why == 'cooldown' then return 'Slow down a moment' end
-    if why == 'busy' then return 'Upload already in progress' end
-    return 'Upload limit reached, try again later'
+    if why == 'cooldown' then return 'Slow down a moment', 'voicememos.uploadSlowDown' end
+    if why == 'busy' then return 'Upload already in progress', 'voicememos.uploadBusy' end
+    return 'Upload limit reached, try again later', 'voicememos.uploadLimitReached'
 end
 
 ---Takes a recorded memo as a base64 audio data-URL, pushes it to the media provider and saves it.
@@ -129,15 +129,15 @@ end
 ---@param prepaid boolean|nil true when an HTTP slot already holds the budget for it
 local function ingest(src, audio, name, duration, prepaid)
     if type(audio) ~= 'string' or not lib.string.startsWith(audio, 'data:audio/') then
-        TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Bad audio payload')
+        TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Bad audio payload', 'voicememos.badAudioPayload')
         return
     end
     if #audio > VM.MaxAudioBytes then
-        TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Recording is too long')
+        TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Recording is too long', 'voicememos.recordingTooLong')
         return
     end
     if uploading[src] then
-        TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Upload already in progress')
+        TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Upload already in progress', 'voicememos.uploadBusy')
         return
     end
     if not prepaid then
@@ -159,14 +159,14 @@ local function ingest(src, audio, name, duration, prepaid)
         uploading[src] = nil
         if not url then
             print(('^1[sd-phone:voice]^0 upload failed: %s'):format(tostring(err)))
-            TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, err or 'Upload failed')
+            TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Upload failed', 'voicememos.uploadFailed')
             return
         end
         local memo = actions.saveUploaded(src, url, name, duration)
         if memo then
             TriggerClientEvent('sd-phone:client:voice:added', src, memo)
         else
-            TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Could not save memo')
+            TriggerClientEvent('sd-phone:client:voice:uploadFailed', src, 'Could not save memo', 'voicememos.couldNotSaveMemo')
         end
     end)
 end

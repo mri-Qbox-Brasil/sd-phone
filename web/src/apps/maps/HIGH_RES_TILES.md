@@ -29,15 +29,19 @@ zooms further, just softer). Satellite is where the big win is.
 
 ## Get the tiles (either method needs these)
 
-1. **Download a z0–8 community-projection satellite pack.** A known one ships
-   with `RiceaRaul/gta-v-map-leaflet` (download link in that repo's README — the
-   `styleSatelite` folder is the z0–8 satellite set). Any pack whose tiles line
-   up with the current z0–5 map works. **z0–7 is the sweet spot** — far smaller
-   than z8 and still razor sharp.
+**What is on the CDN now (sd-maptiles.pages.dev):** satellite z0–6, rebuilt on 2026-10-27 from
+[gtadb.org](https://github.com/rolux/gtadb.org)'s GTA V satellite (`maps/tiles/5/satellite/6`, 0.5 m/px),
+licensed **CC BY 4.0**: it has to stay credited, which the map does in its corner (`credit` in `data.ts`). It was
+cut into this map's projection by resampling gtadb's zoom 6 (256 px tiles, a 32768 m square centred on world
+(0, 0)) onto the `WORLD` box; it lines up with the old set to about a metre. Atlas is the community pack, as before.
 
-2. **Lay it out as `satellite/<z>/<x>/<y>.jpg`.** The app builds tile URLs as
-   `<base>/satellite/<z>/<x>/<y>.jpg`, so if your pack's folder is called
-   `styleSatelite`, rename it to `satellite`.
+**Do not use** packs built from Plebmasters' Forge renders: they carry Plebmasters' "FORGE" watermark tiled
+across the whole map, faint over land and plain over the sea. The previous satellite set on the CDN was one of
+these. (This doc used to point at the `styleSatelite` set in `RiceaRaul/gta-v-map-leaflet`; whatever pack you
+try, zoom right in over open water and look for the badge before using it.)
+
+Any other pack must use the same community projection as the current tiles (see below) and be free of anyone's
+branding. Lay it out as `satellite/<z>/<x>/<y>.jpg`.
 
 ## Method A — Bundle in the resource (NO GitHub, recommended)
 

@@ -7,10 +7,15 @@ export const NavContext = createContext<{ onWillBack: () => void }>({
 
 export const NOOP_NAV = { onWillBack: () => {} };
 
+export const QuietEntryContext = createContext(0);
+
+const QUIET_ENTRY_MS = 600;
+
 export function useIosPush(onBack: () => void, animateIn = true) {
     const { onWillBack } = useContext(NavContext);
+    const quietSince = useContext(QuietEntryContext);
     const [leaving, setLeaving] = useState(false);
-    const [enter, setEnter] = useState(animateIn);
+    const [enter, setEnter] = useState(() => animateIn && Date.now() - quietSince > QUIET_ENTRY_MS);
 
     // Play the push-in animation exactly ONCE, then drop it from the style. A CSS
     // animation restarts whenever its element is re-inserted into the DOM, and the app
