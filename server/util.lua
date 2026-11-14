@@ -1,23 +1,15 @@
 ---@type table sd-phone config root (configs/config.lua); read for the number format + length.
 local config = require 'configs.config'
+---@type table App switch (shared.appenabled): whether configs/apps.lua switched an app off.
+local appenabled = require 'shared.appenabled'
 
 ---@type table Shared server helpers; the table returned at end of file.
 local util = {}
 
----@type table<string, boolean> Apps switched off in configs/apps.lua. Keyed on the disabled ones
----rather than the enabled ones, so an id this file has never heard of still counts as on.
-local DISABLED_APPS = {}
-for _, app in ipairs((config.Apps or {}).Apps or {}) do
-    if app.id and app.enabled == false then DISABLED_APPS[app.id] = true end
-end
-
 ---Whether an app is switched on in configs/apps.lua. Background work belonging to a single app is
 ---gated on this, so a disabled app costs no threads, no ticks and no writes.
----@param id string app id as configs/apps.lua names it
----@return boolean enabled
-function util.appEnabled(id)
-    return not DISABLED_APPS[id]
-end
+---@type fun(id: string): boolean
+util.appEnabled = appenabled.enabled
 
 ---Whether a player is carrying a phone right now. A server that gates the phone behind an item
 ---answers from the inventory; one with no phone items configured has no item to lose, so everyone
@@ -82,7 +74,7 @@ function util.truthy(v) return v == true or v == 1 or v == '1' end
 
 ---Trims leading/trailing whitespace. A non-string coerces to '' (never nil).
 ---@param s any
----@return string trimmed, or '' when not a string
+---@return string trimmed '' when s is not a string
 -- Linear, and it has to stay that way. The obvious `s:gsub('%s+$', '')` is
 -- quadratic on interior whitespace: for 'x' .. (' '):rep(n) .. 'x' the matcher
 -- re-expands the run at every start position and backtracks it against `$`.
@@ -636,7 +628,9 @@ function util.cooldownLeft(cid, key, ms)
     if type(cid) ~= 'string' or cid == '' then return 0 end
     local b = buckets[cid .. '\0c\0' .. tostring(key)]
     if not b then return 0 end
-    local left = (tonumber(ms) or 0) - (GetGameTimer() - b.last)
+    local since = GetGameTimer() - b.last
+    if since < 0 then return 0 end
+    local left = (tonumber(ms) or 0) - since
     return left > 0 and math.floor(left) or 0
 end
 
