@@ -1,16 +1,23 @@
----Shows one iOS-style banner in the React app; drops anything without a table payload and a
----string title. Fields: app, image, title (required), body, time, appId.
----@param data table notification payload
+---@type {enabled: fun(id: string): boolean} App id registry (client.appids): apps configs/apps.lua switched off.
+local appIds = require 'client.appids'
+
+---Shows one iOS-style banner in the React app; drops anything without a table payload and a string
+---title, and any non-emergency banner for an app disabled in configs/apps.lua.
+---@param data table notification payload: app, image, title (required), body, time, appId, emergency
 local function push(data)
     if type(data) ~= 'table' or type(data.title) ~= 'string' then return end
+    local target = data.appId or data.app
+    if target and not data.emergency and not appIds.enabled(target) then return end
     SendNUIMessage({ action = 'sd-phone:notification', data = data })
 end
 
----Landing point for the server notify export; shape-checked by push. Dropped when the player is
----not carrying a phone (the server owns that answer); emergency alerts always get through.
+---Landing point for every server banner; shape-checked by push. Banners sent through sd-phone's own
+---fan-out arrive `gated`: the server already checked this player carries a phone. Another resource
+---triggering this event directly skips that gate, so its banners still ask once before showing.
+---Emergency alerts reach players with no phone either way.
 ---@param data table notification payload
 RegisterNetEvent('sd-phone:client:notify', function(data)
-    if type(data) == 'table' and not data.emergency
+    if type(data) == 'table' and not data.emergency and not data.gated
         and not lib.callback.await('sd-phone:server:carriesPhone', false) then
         return
     end

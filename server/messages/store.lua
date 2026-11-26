@@ -3,6 +3,8 @@ local store = {}
 
 
 local util = require 'server.util'
+---@type table Column and index back-fills for tables that predate them (server.migrations).
+local migrations = require 'server.migrations'
 local function newId() return util.newId(7) end
 
 store.newId = newId
@@ -31,6 +33,14 @@ local function encodeJson(tbl)
     return json.encode(tbl)
 end
 
+---Clears every stored group-member name. Members used to be stored under their character name,
+---which unmasked whoever was behind a burner number to everyone in the group; names are now the
+---member's own My Card name or nothing, and rows from before that fall back to the number.
+---@return table stats { cleared }
+local function clearGroupMemberNames()
+    return { cleared = MySQL.update.await("UPDATE phone_message_group_members SET name = ''") or 0 }
+end
+
 ---Creates the message tables idempotently, back-fills missing columns, and upgrades the
 ---reactions primary key. Run once at boot.
 function store.ensureSchema()
@@ -56,7 +66,8 @@ function store.ensureSchema()
             seen_at       BIGINT       NULL,
             PRIMARY KEY (id),
             INDEX idx_phone_messages_thread (citizenid, conversation, created_at),
-            INDEX idx_phone_messages_mid (mid)
+            INDEX idx_phone_messages_mid (mid),
+            INDEX idx_phone_messages_preview (citizenid, withheld, conversation, created_at, direction, is_read)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
     util.ensureIndex('phone_messages', 'idx_phone_messages_unread', '(citizenid, is_read)')
@@ -126,9 +137,11 @@ function store.ensureSchema()
     })
     util.ensureIndex('phone_messages', 'idx_phone_messages_mid', '(mid)')
     util.ensureIndex('phone_messages', 'idx_phone_messages_thread', '(citizenid, conversation, created_at)')
+    migrations.apply('phone_messages')
     MySQL.query.await('UPDATE phone_messages SET mid = id WHERE mid IS NULL')
 
     util.ensureColumns('phone_message_groups', { avatar = 'avatar VARCHAR(512) NULL' })
+    util.runOnce('messages_group_member_names', clearGroupMemberNames)
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_pending_messages (

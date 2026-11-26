@@ -1,8 +1,5 @@
 import { hostResource, isFiveM } from '@/core/nui';
 import { device } from '@device';
-// The catalogs are the resource-root locales/<lang>.json files (shared with the
-// Lua side), stored as nested tables. Flatten each once into dot-path keys so
-// t('ns.key') resolves — mirrors the flatten in bridge/shared/locale.lua.
 function flatten(obj: Record<string, unknown>, prefix: string, out: Record<string, string>): Record<string, string> {
     for (const k in obj) {
         const v = obj[k];
@@ -13,47 +10,40 @@ function flatten(obj: Record<string, unknown>, prefix: string, out: Record<strin
     return out;
 }
 
-// NO catalog ships in the boot bundle. English is served entirely by the
-// inline t() fallbacks (locales/en.json is GENERATED from them, so bundling
-// it would spend ~110 KB returning identical strings — the file stays on disk
-// for the Lua side and as the translators' source). Non-English catalogs are
-// ~120 KB of JSON each and load on demand as their own chunks; every t() call
-// carries an English fallback, so the UI renders English for the moment a
-// catalog is in flight, then re-renders via the locale store.
 const catalogs: Record<string, Record<string, string>> = {
     en: {},
 };
 
-// Every resource-root catalog, discovered at build time and code-split into its own lazy
-// chunk. Dropping a new locales/<code>.json in is all it takes: the loader and both language
-// pickers derive from the files (a UI rebuild is still required, as the catalogs are bundled).
-const catalogFiles = import.meta.glob<{ default: Record<string, unknown> }>(
-    ['../../../locales/*.json', '!../../../locales/en.json']);
+type CatalogModule = { default: Record<string, unknown> };
 
-const loaders: Record<string, () => Promise<{ default: Record<string, unknown> }>> = {};
+const catalogFiles: Record<string, () => Promise<CatalogModule>> = import.meta.env.SD_FETCH_LOCALES
+    ? {}
+    : import.meta.glob<CatalogModule>(['../../../locales/*.json', '!../../../locales/en.json']);
+
+const loaders: Record<string, () => Promise<CatalogModule>> = {};
 for (const path in catalogFiles) {
     const code = path.slice(path.lastIndexOf('/') + 1).replace('.json', '');
     if (code === 'en') continue;
     loaders[code] = catalogFiles[path];
 }
 
+const shippedCodes = new Set<string>(import.meta.env.SD_FETCH_LOCALES
+    ? (import.meta.env.SD_LOCALE_CODES ?? []).filter(code => code !== 'en')
+    : Object.keys(loaders));
+
 export interface LocaleOption { code: string; name: string }
 
-// A language's name for itself from the browser's own Intl data, e.g. 'fr' -> 'Français'.
 function nativeName(code: string): string {
     try {
         const raw = new Intl.DisplayNames([code], { type: 'language' }).of(code);
         if (raw && raw !== code) return raw.charAt(0).toUpperCase() + raw.slice(1);
-    } catch { /* unrecognized code: fall through */ }
+    } catch {}
     return code.toUpperCase();
 }
 
-// Player-facing language options, derived from the discovered catalogs: English (served by the
-// inline fallbacks) first, then every locales/*.json alphabetically. Drives the pickers in
-// Setup and Settings > General > Language & Region.
 export const SUPPORTED_LOCALES: LocaleOption[] = [
     { code: 'en', name: 'English' },
-    ...Object.keys(loaders).sort().map(code => ({ code, name: nativeName(code) })),
+    ...[...shippedCodes].sort().map(code => ({ code, name: nativeName(code) })),
 ];
 
 
@@ -65,7 +55,7 @@ export function registerRuntimeLocales(codes: unknown): void {
     let added = false;
     for (const raw of codes) {
         const code = String(raw);
-        if (code === 'en' || loaders[code] || runtimeCodes.has(code) || !/^[a-z]{2}(-[a-z]{2})?$/i.test(code)) continue;
+        if (code === 'en' || shippedCodes.has(code) || runtimeCodes.has(code) || !/^[a-z]{2}(-[a-z]{2})?$/i.test(code)) continue;
         runtimeCodes.add(code);
         SUPPORTED_LOCALES.push({ code, name: nativeName(code) });
         added = true;
@@ -96,9 +86,6 @@ function applyDocumentLocale(code: string): void {
     document.documentElement.lang = code;
 }
 
-/** Select the active language (from config.Locale, or a player's saved pick).
- *  Falls back to English for an unknown code. Resolves once the catalog is
- *  applied; a newer setLocale call wins over a slower in-flight one. */
 function bundledCatalog(code: string): Promise<Record<string, unknown> | null> {
     const loader = loaders[code];
     if (!loader) return Promise.resolve(null);
@@ -106,7 +93,7 @@ function bundledCatalog(code: string): Promise<Record<string, unknown> | null> {
 }
 
 function isKnownLocale(code: string): boolean {
-    return Boolean(catalogs[code] || loaders[code] || runtimeCodes.has(code));
+    return Boolean(catalogs[code] || shippedCodes.has(code) || runtimeCodes.has(code));
 }
 
 export function setLocale(requested: string): Promise<void> {
@@ -122,9 +109,6 @@ export function setLocale(requested: string): Promise<void> {
         return Promise.resolve();
     }
 
-    // Companion devices also expose locales/<code>.json, but their files only
-    // translate device-side Lua messages. The full React catalog is bundled
-    // from sd-phone/locales and must win for a tablet.
     const load = device.rpcAction
         ? bundledCatalog(code).then(data => data ?? fetchCatalog(code))
         : isFiveM
@@ -174,8 +158,6 @@ export function t(key: string, fallback: string, vars?: Record<string, string | 
     return s;
 }
 
-/** Suffix for legacy English-style counters. A locale can use an empty suffix
- *  with a count-neutral label instead of leaking the English "s" into its UI. */
 export function pluralSuffix(count: number): string {
     return count === 1 ? '' : t('common.pluralSuffix', 's');
 }

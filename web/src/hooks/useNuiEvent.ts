@@ -1,14 +1,10 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 
+import { isHostMessage } from '@/core/messageSource';
 import type { NuiMessage } from '@/core/types';
 
 type AnyHandlerRef = MutableRefObject<(data: unknown) => void>;
 
-// One window 'message' listener for the whole app, dispatching by action to
-// registered handler refs. Handlers live in refs (always the latest render's
-// closure), so components never re-subscribe on re-render and inline handlers
-// carry no churn. With 100+ useNuiEvent sites, per-hook listeners meant every
-// SendNUIMessage fanned out to every mounted hook.
 const registry = new Map<string, Set<AnyHandlerRef>>();
 let listening = false;
 
@@ -16,6 +12,7 @@ function ensureListener(): void {
     if (listening || typeof window === 'undefined') return;
     listening = true;
     window.addEventListener('message', (event: MessageEvent) => {
+        if (!isHostMessage(event)) return;
         const msg = event.data as { action?: string; data?: unknown } | undefined;
         if (!msg?.action) return;
         const refs = registry.get(msg.action);

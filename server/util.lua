@@ -1,32 +1,48 @@
 ---@type table sd-phone config root (configs/config.lua); read for the number format + length.
 local config = require 'configs.config'
+---@type table App switch (shared.appenabled): whether configs/apps.lua switched an app off.
+local appenabled = require 'shared.appenabled'
 
 ---@type table Shared server helpers; the table returned at end of file.
 local util = {}
 
----@type table<string, boolean> Apps switched off in configs/apps.lua. Keyed on the disabled ones
----rather than the enabled ones, so an id this file has never heard of still counts as on.
-local DISABLED_APPS = {}
-for _, app in ipairs((config.Apps or {}).Apps or {}) do
-    if app.id and app.enabled == false then DISABLED_APPS[app.id] = true end
-end
-
 ---Whether an app is switched on in configs/apps.lua. Background work belonging to a single app is
 ---gated on this, so a disabled app costs no threads, no ticks and no writes.
----@param id string app id as configs/apps.lua names it
----@return boolean enabled
-function util.appEnabled(id)
-    return not DISABLED_APPS[id]
-end
+---@type fun(id: string): boolean
+util.appEnabled = appenabled.enabled
+
+---@type integer How long a carry answer is reused, in ms. A burst of banners, a friends-map
+---refresh and a ring all land inside it and share one inventory read; a phone item moving
+---clears the holder's entry at once (server/main.lua hooks the inventory), so the window only
+---matters for a move no hook reports.
+local CARRY_TTL = 2000
+
+---@type table<integer, { at: integer, carrying: boolean }> Last carry answer per server id.
+local carryCache = {}
 
 ---Whether a player is carrying a phone right now. A server that gates the phone behind an item
----answers from the inventory; one with no phone items configured has no item to lose, so everyone
----carries one. Read on demand, never cached, so a dropped phone counts the moment it leaves.
+---answers from the inventory, in one read, reused for CARRY_TTL; one with no phone items
+---configured has no item to lose, so everyone carries one.
 ---@param src number player server id
 ---@return boolean carrying
 function util.carriesPhone(src)
     if #((config.Phone or {}).Items or {}) == 0 then return true end
-    return exports['sd-phone']:hasPhone(src) ~= nil
+    local now = GetGameTimer()
+    local hit = carryCache[src]
+    if hit then
+        local age = now - hit.at
+        if age >= 0 and age < CARRY_TTL then return hit.carrying end
+    end
+    local carrying = exports['sd-phone']:hasPhone(src) ~= nil
+    carryCache[src] = { at = now, carrying = carrying }
+    return carrying
+end
+
+---Forgets a player's cached carry answer, so the next check reads the inventory again. Called when
+---a phone item moves for them and when they leave.
+---@param src integer|nil player server id; nil forgets everyone
+function util.forgetCarry(src)
+    if src == nil then carryCache = {} else carryCache[src] = nil end
 end
 
 ---Success response envelope - the shape every callback/action returns on the happy path. `data`
@@ -82,7 +98,7 @@ function util.truthy(v) return v == true or v == 1 or v == '1' end
 
 ---Trims leading/trailing whitespace. A non-string coerces to '' (never nil).
 ---@param s any
----@return string trimmed, or '' when not a string
+---@return string trimmed '' when s is not a string
 -- Linear, and it has to stay that way. The obvious `s:gsub('%s+$', '')` is
 -- quadratic on interior whitespace: for 'x' .. (' '):rep(n) .. 'x' the matcher
 -- re-expands the run at every start position and backtracks it against `$`.
@@ -636,7 +652,9 @@ function util.cooldownLeft(cid, key, ms)
     if type(cid) ~= 'string' or cid == '' then return 0 end
     local b = buckets[cid .. '\0c\0' .. tostring(key)]
     if not b then return 0 end
-    local left = (tonumber(ms) or 0) - (GetGameTimer() - b.last)
+    local since = GetGameTimer() - b.last
+    if since < 0 then return 0 end
+    local left = (tonumber(ms) or 0) - since
     return left > 0 and math.floor(left) or 0
 end
 
@@ -801,6 +819,8 @@ AddEventHandler('playerDropped', function()
     for i = 1, #cleanups do pcall(cleanups[i], src, ok and cid or nil) end
 end)
 
+util.onCleanup(function(src) carryCache[src] = nil end)
+
 ---@type boolean Whether this server's ox_lib carries the triggerClientEvent module.
 ---
 ---Probed by reading the file, NOT by testing `lib.triggerClientEvent` for nil. ox_lib's loader
@@ -813,6 +833,14 @@ end)
 ---the probe guards both directions in time.
 local HAS_BATCHED_PUSH = LoadResourceFile('ox_lib', 'imports/triggerClientEvent/server.lua') ~= nil
 
+---@type string The phone banner event. server/main.lua sends every TriggerClientEvent for it
+---through util.pushBanner, so a banner is only ever sent to a player carrying a phone.
+util.BANNER_EVENT = 'sd-phone:client:notify'
+
+---@type function TriggerClientEvent as it was before server/main.lua wrapped it for banners, so a
+---send that has already been through the carry gate never re-enters it.
+local rawTrigger = TriggerClientEvent
+
 ---Sends one event to many players. Prefers ox_lib's batched push, which msgpacks the arguments once
 ---and reuses the buffer per target instead of re-packing them for each; falls back to a plain loop
 ---of TriggerClientEvent, which is what the batched version does internally anyway.
@@ -824,14 +852,53 @@ local HAS_BATCHED_PUSH = LoadResourceFile('ox_lib', 'imports/triggerClientEvent/
 ---@param ... any event arguments
 function util.pushMany(event, targets, ...)
     if type(targets) ~= 'table' or not targets[1] then return end
+    if event == util.BANNER_EVENT then
+        local data = ...
+        targets = util.bannerRecipients(targets, data)
+        if not targets[1] then return end
+        if type(data) == 'table' then data.gated = true end
+    end
 
     if HAS_BATCHED_PUSH then
         return lib.triggerClientEvent(event, targets, ...)
     end
 
+    local send = event == util.BANNER_EVENT and rawTrigger or TriggerClientEvent
     for i = 1, #targets do
-        TriggerClientEvent(event, targets[i], ...)
+        send(event, targets[i], ...)
     end
+end
+
+---Which of `targets` may get a phone banner: all of them for an emergency alert, which reaches a
+---player with no phone too, otherwise only those carrying one. A carry read that errors delivers
+---rather than drops, so an inventory hiccup costs a stray banner and never a missed one.
+---@param targets integer[] player server ids
+---@param data any banner payload
+---@return integer[] recipients
+function util.bannerRecipients(targets, data)
+    if type(data) == 'table' and data.emergency then return targets end
+    local out = {}
+    for i = 1, #targets do
+        local read, carrying = pcall(util.carriesPhone, targets[i])
+        if not read or carrying then out[#out + 1] = targets[i] end
+    end
+    return out
+end
+
+---Sends a phone banner to one player, or to every player with -1, through the carry gate. Every
+---send of util.BANNER_EVENT ends up here (server/main.lua routes TriggerClientEvent for it), so the
+---answer is always the server's own and no client has to ask for it before showing the banner.
+---@param target any player server id, or -1 for everyone
+---@param ... any event arguments, the banner payload first
+function util.pushBanner(target, ...)
+    local id = tonumber(target)
+    if not id then return end
+    local targets = { id }
+    if id == -1 then
+        targets = {}
+        for _, player in ipairs(GetPlayers()) do targets[#targets + 1] = tonumber(player) end
+    end
+    util.pushMany(util.BANNER_EVENT, targets, ...)
 end
 
 ---@type string base64url alphabet, matching b64urlEncode in web/src/lib/waypointCode.ts.

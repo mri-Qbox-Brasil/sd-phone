@@ -24,6 +24,7 @@ CreateThread(function()
     -- from a live one once phone_mail_accounts exists; the two schemas boot on separate threads.
     pcall(actions.repairOrphanAccounts)
     boot.schemaReady()
+    pcall(store.backfillUnread)
 end)
 
 ---Completes a successful send envelope: runs the delivery fan-out, then strips the pushes list
@@ -47,17 +48,17 @@ lib.callback.register('sd-phone:server:mail:signUp', function(src, payload)
     return actions.signUp(src, payload)
 end)
 
----Sign-in repushes the badge snapshot.
+---Sign-in repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:signIn', function(src, payload)
     local result = actions.signIn(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
----Sign-out repushes the badge snapshot.
+---Sign-out repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:signOut', function(src, payload)
     local result = actions.signOut(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
@@ -70,17 +71,17 @@ lib.callback.register('sd-phone:server:mail:saveDraft', function(src, payload)
     return actions.saveDraft(src, payload)
 end)
 
----Mark-read repushes the badge snapshot.
+---Mark-read repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:markRead', function(src, payload)
     local result = actions.markRead(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
----Mark-many-read (the "mark all" action) repushes the badge snapshot after a single write.
+---Mark-many-read (the "mark all" action) repushes the Mail badge after a single write.
 lib.callback.register('sd-phone:server:mail:markManyRead', function(src, payload)
     local result = actions.markManyRead(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
@@ -92,10 +93,10 @@ lib.callback.register('sd-phone:server:mail:runAction', function(src, payload)
     return actions.runAction(src, payload)
 end)
 
----Move-to-bin repushes the badge snapshot.
+---Move-to-bin repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:moveToBin', function(src, payload)
     local result = actions.moveToBin(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
@@ -109,24 +110,24 @@ lib.callback.register('sd-phone:server:mail:attachmentSaveStates', function(src,
     return actions.attachmentSaveStates(src, payload)
 end)
 
----Discarding a draft repushes the badge snapshot.
+---Discarding a draft repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:discardDraft', function(src, payload)
     local result = actions.discardDraft(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
----Move repushes the badge snapshot.
+---Move repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:move', function(src, payload)
     local result = actions.move(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
----Delete-account repushes the badge snapshot.
+---Delete-account repushes the Mail badge.
 lib.callback.register('sd-phone:server:mail:deleteAccount', function(src, payload)
     local result = actions.deleteAccount(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'mail')
     return result
 end)
 
@@ -204,7 +205,7 @@ end)
 exports('mailAddressExists', function(email)
     local addr = trim(email):lower()
     if addr == '' then return false end
-    return store.getAccount(addr) ~= nil
+    return store.getAccountSummary(addr) ~= nil
 end)
 
 ---Reads a mailbox's messages in the serialized MailMessage shape; nil when the account doesn't

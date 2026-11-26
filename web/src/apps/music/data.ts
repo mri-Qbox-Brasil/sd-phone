@@ -12,7 +12,6 @@ export interface Track {
     album?: string;
     url:    string;
     addedAt: number;
-    /** Explicit artwork, e.g. from an external now-playing provider. Wins over any YouTube-derived cover. */
     thumb?: string;
 }
 
@@ -159,6 +158,10 @@ export function isSourceAllowed(url: string): boolean {
     return sourceRejection(url) === null;
 }
 
+export function playableTracks<T extends { url: string }>(tracks: readonly T[]): T[] {
+    return tracks.filter(track => typeof track?.url === 'string' && isSourceAllowed(track.url));
+}
+
 export async function fetchYouTubeMeta(url: string): Promise<{ title: string; artist: string }> {
     if (!isSourceAllowed(url)) return { title: '', artist: '' };
     try {
@@ -167,7 +170,7 @@ export async function fetchYouTubeMeta(url: string): Promise<{ title: string; ar
             const j = await r.json() as { title?: string; author_name?: string };
             return { title: j.title || t('music.youtubeVideo', 'YouTube video'), artist: j.author_name || 'YouTube' };
         }
-    } catch { /* ignore */ }
+    } catch {}
     return { title: t('music.youtubeVideo', 'YouTube video'), artist: 'YouTube' };
 }
 
@@ -186,12 +189,6 @@ export function coverGradient(seed: string): string {
     return `linear-gradient(135deg, ${a}, ${b})`;
 }
 
-/**
- * Artwork URL for a track, or null when there is none to show. An explicit `thumb` (e.g. from an
- * external now-playing provider) always wins; otherwise falls back to a YouTube-derived cover.
- * Lives here rather than in Music.tsx so the home screen widget can resolve a cover without
- * importing the Music app chunk.
- */
 export function coverUrl(track: { url: string; thumb?: string }): string | null {
     if (track.thumb) return track.thumb;
     const vid = youtubeId(track.url);

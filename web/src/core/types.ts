@@ -12,6 +12,8 @@ import type {
 } from '@/apps/racing/data';
 import type { VUser as VibezUser } from '@/apps/vibez/data';
 import type { Reaction } from '@/shared/chat/data';
+import type { StoreState } from '@/casestore/casesApi';
+import type { PhoneDesign } from '@/shell/shells';
 
 export interface OpenPayload {
     locale?: string;
@@ -20,6 +22,10 @@ export interface OpenPayload {
     locked: boolean;
     battery: number;
     frameColor?: string;
+    /** The design of the phone in hand (sd-phone-props, picked at a case store). Default classic. */
+    phoneLook?: PhoneDesign;
+    /** configs/shells.lua FollowPhone: false keeps the shell to what the player picked. Default true. */
+    shellFollowsPhone?: boolean;
     carrier: string;
     signal: number;
     showWifi: boolean;
@@ -33,7 +39,6 @@ export interface OpenPayload {
     installedApps?: string[];
     homeLayout?: string;
     mailDomain?: string;
-    /** Phone-number display config (config.Phone.Number); formats are keyed by digit count. */
     number?: {
         formats?: Record<string, string>;
         length?: number;
@@ -57,35 +62,25 @@ export interface OpenPayload {
     sim?: SimStatePush;
 }
 
-/** Unique-phones SIM snapshot: enabled=false means the feature is off (stock behaviour). */
 export interface SimStatePush {
     enabled: boolean;
     hasSim?: boolean;
     number?: string;
-    /** DeviceIdentity mode: the phone owns its data and opens without a SIM (no No-SIM wall,
-     *  "No Service" in the status bar instead). Absent/false = legacy SIM-is-identity mode. */
     device?: boolean;
-    /** Device mode only: the phone's device identity, used to namespace per-phone UI state
-     *  (setup completion, auth cache) so swapping SIMs on one phone never resets it. */
     profile?: string;
 }
 
-/** One Wi-Fi network the phone can see. `strength` is 0..1 raw, `bars` the 0..3 the icon draws. */
 export interface WifiNetwork {
     id: string;
     ssid: string;
-    /** Already joined once by this character, so rejoining needs no password. */
     known?: boolean;
-    /** Password protected. The client omits it on the connected network, where it normalizes to false. */
     secured: boolean;
     strength: number;
     bars: number;
 }
 
-/** Live Wi-Fi snapshot: enabled=false means the radio is off, so there is nothing to join. */
 export interface WifiState {
     enabled: boolean;
-    /** This server runs Wi-Fi at all. Distinguishes a switched-off radio from no networks. */
     configured?: boolean;
     connected: WifiNetwork | null;
     networks: WifiNetwork[];
@@ -122,7 +117,6 @@ export interface AppDef {
     route: string;
     accent: string;
     base?: boolean;
-    /** Wi-Fi network id (configs/wifi.lua) the phone must be joined to before this app downloads. */
     wifi?: string;
 }
 
@@ -131,11 +125,6 @@ export interface CustomWidgetDef {
     name:  string;
     ui:    string;
     sizes: ('sm' | 'md' | 'lg')[];
-    /**
-     * Opt-in: lets the widget's iframe receive real pointer events (taps, buttons) instead of
-     * being purely decorative. Off by default so existing third-party widgets that never
-     * expected clicks keep behaving exactly as before.
-     */
     interactive?: boolean;
 }
 
@@ -162,9 +151,7 @@ export interface CustomAppDef {
     fixBlur?:    boolean;
     keepOpen?:   boolean;
     landscape?:  boolean;
-    /** Wi-Fi network id (configs/wifi.lua) the phone must be joined to before this app downloads. */
     wifi?:       string;
-    /** Device ids this app appears on. Absent means every device. */
     devices?:    string[];
     widgets?:    CustomWidgetDef[];
     lockscreenWidgets?: CustomLockscreenWidgetDef[];
@@ -223,8 +210,6 @@ interface CallPush {
 interface CallEndedPush {
     channel: number;
     reason:  string;
-    /** Present on the caller's teardown when the callee never answered and the number they
-     *  dialled owns a mailbox, so the call screen can offer to record a message. */
     voicemail?: { number: string; name?: string };
 }
 
@@ -298,13 +283,6 @@ interface MusicSharePush {
     tracks?: MusicSharedTrack[];
 }
 
-/**
- * Pushed by `exports('sd-phone'):setExternalNowPlaying(appId, track)` — lets a third-party
- * resource (its own audio engine, not sd-phone's built-in Music) drive the Control Center card,
- * the dynamic-island mini-player, and the native Now Playing widget, the same way the built-in
- * Music app does. Only one provider is "active" at a time: the most recent `set` wins, and a
- * `clear` from a stale appId (one that already lost the slot to a newer provider) is ignored.
- */
 export interface ExternalNowPlayingTrack {
     title:    string;
     artist?:  string;
@@ -316,7 +294,6 @@ export interface ExternalNowPlayingTrack {
     canPrev?: boolean;
 }
 
-/** One registered custom-app widget currently visible in the lock-screen notification stack. */
 export interface ActiveLockscreenWidget {
     key: string;
     appId: string;
@@ -326,9 +303,10 @@ export interface ActiveLockscreenWidget {
 
 export type NuiMessage =
     | { action: 'sd-phone:open';    data: OpenPayload }
-    | { action: 'sd-phone:apps';    data: { installedApps?: string[]; homeLayout?: string | null } }
+    | { action: 'sd-phone:apps';    data: { profile?: string; installedApps?: string[]; homeLayout?: string | null } }
     | { action: 'sd-phone:simState'; data: SimStatePush }
     | { action: 'sd-phone:frameColor'; data: { color: string } }
+    | { action: 'sd-phone:phoneLook'; data: { look: PhoneDesign } }
     | { action: 'sd-phone:fold'; data: { open?: boolean; foldable?: boolean; openW?: number; restore?: boolean } }
     | { action: 'sd-phone:music:receive'; data: MusicSharePush }
     | { action: 'sd-phone:nowPlaying:set';   data: { appId: string; track: ExternalNowPlayingTrack } }
@@ -425,6 +403,8 @@ export type NuiMessage =
     | { action: 'sd-phone:payphone:ended';    data: { channel: number; reason: string } }
     | { action: 'sd-phone:payphone:incoming';      data: { channel: number } }
     | { action: 'sd-phone:payphone:incomingEnded'; data: { channel: number } }
+    | { action: 'sd-phone:casestore:open';  data: Partial<StoreState> }
+    | { action: 'sd-phone:casestore:close' }
     | { action: 'sd-phone:radio:status';   data: { on: boolean; freq: number; standby?: boolean } }
     | { action: 'sd-phone:radio:onair';    data: { active: boolean } }
     | { action: 'sd-phone:radio:count';    data: { count: number } }
@@ -544,13 +524,13 @@ export type NuiMessage =
     | { action: 'battleship:lobby';    data: { id: string; host: string; public: boolean; wager: number; isHost: boolean; canStart: boolean; members: { name: string; you: boolean; host: boolean; color: string; canAfford: boolean; ready: boolean; returned: boolean }[] } }
     | { action: 'battleship:lobbyClosed'; data: Record<string, never> }
     | { action: 'battleship:start';    data: { gameId: string; color: string; opponent: string; pot: number } }
-    | { action: 'battleship:move';     data: { gameId: string; move: { shot: { r: number; c: number } | null; prevResult: { hit: boolean; sunk: string | null } | null } } }
+    | { action: 'battleship:move';     data: { gameId: string; move: { by: string; cell: number; hit: boolean; sunk?: string } } }
     | { action: 'battleship:ended';    data: { reason: string } }
     | { action: 'wordle:invited';      data: { fromSrc: string; fromName: string; lobbyId: string } }
     | { action: 'wordle:lobby';        data: { id: string; host: string; public: boolean; wager: number; isHost: boolean; canStart: boolean; members: { name: string; you: boolean; host: boolean; color: string; canAfford: boolean; ready: boolean; returned: boolean }[] } }
     | { action: 'wordle:lobbyClosed';  data: Record<string, never> }
     | { action: 'wordle:start';        data: { gameId: string; color: string; opponent: string; pot: number } }
-    | { action: 'wordle:move';         data: { gameId: string; move: { rows: string[][]; solved: boolean; failed: boolean; tries: number; finishMs: number } } }
+    | { action: 'wordle:move';         data: { gameId: string; move: { side: string; guess?: string; row: ('correct' | 'present' | 'absent')[]; solved: boolean; failed: boolean; tries: number } } }
     | { action: 'wordle:ended';        data: { reason: string } }
     | { action: 'sd-phone:notification';       data: { id?: string; app?: string; image?: string; titleKey?: string; title: string; titleVars?: Record<string, string | number>; bodyKey?: string; body?: string; bodyVars?: Record<string, string | number>; time?: string; appId?: string; quietInApp?: boolean; emergency?: boolean; otherPhone?: boolean; phoneColor?: string; profileKey?: string; link?: Record<string, unknown> } }
     | { action: 'sd-phone:badges';             data: Record<string, number> }

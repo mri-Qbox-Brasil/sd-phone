@@ -3,6 +3,8 @@ local store = {}
 
 
 local util = require 'server.util'
+---@type table Column back-fills for tables that predate a column (server.migrations).
+local migrations = require 'server.migrations'
 local function newId() return util.newId(10) end
 
 ---@type fun(): string Public alias - composers outside this module (mail actions, the
@@ -18,7 +20,9 @@ local PENDING_CAP = 25
 ---@type integer Seconds a held mail waits for a mailbox before it is dropped.
 local PENDING_TTL = 14 * 24 * 3600
 
----Hashes a password into a stable, deterministic 24-character hex digest.
+---The pre-engine mailbox digest: a stable 24-character hex string under a pepper shipped in the
+---source, so it protects nothing. Verification only; nothing new is written in this format, and a
+---mailbox still holding one is moved to the engine's scrypt hash on its next sign-in.
 ---@param password string
 ---@return string 24-char hex digest
 function store.hashPassword(password)
@@ -51,6 +55,45 @@ end
 ---@param tbl table|nil
 ---@return string
 local function encodeJson(tbl) return json.encode(tbl or {}) end
+
+---@type table<string, { owner: thread|nil, waiting: table[] }> Mailbox write locks, keyed by
+---lowercased address. An entry exists only while someone holds or awaits it.
+local locks = {}
+
+---Runs `fn` while holding the mailbox's write lock. Every write here reads the whole messages
+---blob, changes it in Lua and writes it back, awaiting the database at both ends, so two writes to
+---one mailbox used to interleave and the second silently dropped what the first had added - a
+---lost mail on a busy inbox. Holders run one at a time in arrival order; the thread that already
+---holds the lock may take it again, so a locked write can call another. Code that cannot yield
+---(a main chunk) cannot wait its turn either, so it runs unlocked rather than stranding a waiter
+---that would jam the mailbox for good.
+---@param email string mailbox address
+---@param fn fun(): any work to run under the lock
+---@return any ... whatever `fn` returns; an error inside it releases the lock and is re-raised
+local function withMailbox(email, fn)
+    local key = tostring(email or ''):lower()
+    local me = coroutine.running()
+    local lock = locks[key]
+    if lock and lock.owner == me then return fn() end
+    if lock then
+        if not coroutine.isyieldable() then return fn() end
+        local turn = promise.new()
+        lock.waiting[#lock.waiting + 1] = turn
+        Citizen.Await(turn)
+    else
+        lock = { waiting = {} }
+        locks[key] = lock
+    end
+    lock.owner = me
+    local res = table.pack(pcall(fn))
+    lock.owner = nil
+    local nextTurn = table.remove(lock.waiting, 1)
+    if nextTurn then nextTurn:resolve() else locks[key] = nil end
+    if not res[1] then error(res[2], 0) end
+    return table.unpack(res, 2, res.n)
+end
+
+store.withMailbox = withMailbox
 
 ---@type integer Hard ceiling on one account's stored messages blob. Every append, mark-read and
 ---flag is a read-decode-encode-write of the WHOLE blob on the main thread, so the blob size is
@@ -149,12 +192,39 @@ local function reconcileSessions()
     return #add, #stale
 end
 
----Creates the single Mail table idempotently. Run once at boot. lb-phone's mail app uses the
----same table name with a different shape; such a table is moved aside first.
 ---@type fun(): integer, integer Public alias so the lb-phone importer can rebuild the index right
 ---after it writes logged_in_citizens, instead of leaving mail signed out until the next boot.
 store.reconcileSessions = reconcileSessions
 
+---@type boolean Whether phone_mail_accounts carries unread_inbox. Set by ensureSchema; until then,
+---and on a database where the column could not be added, counts come from the blobs as before.
+local unreadColumn = false
+
+---True when a column is present on a table.
+---@param tbl string
+---@param column string
+---@return boolean
+local function hasColumn(tbl, column)
+    return (tonumber(MySQL.scalar.await([[
+        SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
+    ]], { tbl, column })) or 0) > 0
+end
+
+---Unread inbox messages in a decoded messages array: the number the badge shows for a mailbox.
+---@param messages table[]
+---@return integer unread
+local function countUnread(messages)
+    local n = 0
+    for i = 1, #messages do
+        local m = messages[i]
+        if m.folder == 'inbox' and m.read ~= true then n = n + 1 end
+    end
+    return n
+end
+
+---Creates the single Mail table idempotently. Run once at boot. lb-phone's mail app uses the
+---same table name with a different shape; such a table is moved aside first.
 function store.ensureSchema()
     util.rescueLegacyTable('phone_mail_accounts', 'password_hash')
 
@@ -167,6 +237,7 @@ function store.ensureSchema()
             logged_in_citizens JSON         NOT NULL,
             created_by_cid     VARCHAR(64)  NULL,
             created_at         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            unread_inbox       INT          NULL,
             PRIMARY KEY (email)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
@@ -180,6 +251,8 @@ function store.ensureSchema()
         created_by_cid     = 'created_by_cid VARCHAR(64) NULL',
         created_at         = 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
     })
+    migrations.apply('phone_mail_accounts')
+    unreadColumn = hasColumn('phone_mail_accounts', 'unread_inbox')
     util.ensureIndex('phone_mail_accounts', 'idx_phone_mail_accounts_creator', '(created_by_cid)')
 
     -- Index over logged_in_citizens: JSON_SEARCH cannot use one, so every badge snapshot scanned
@@ -236,6 +309,26 @@ function store.ensureSchema()
     end
 end
 
+---Reads a mail account without its messages blob (nil if no row matches): address, credential
+---column, display name and signed-in list. What an ownership check or a sender lookup needs, at
+---none of the cost of decoding up to 512 KB of mail. Read-only.
+---@param email string
+---@return { email: string, password_hash: string, display_name: string, logged_in_citizens: string[] }|nil
+function store.getAccountSummary(email)
+    if not email or email == '' then return nil end
+    local row = MySQL.single.await(
+        'SELECT email, password_hash, display_name, logged_in_citizens FROM phone_mail_accounts WHERE email = ?',
+        { email }
+    )
+    if not row then return nil end
+    return {
+        email              = row.email,
+        password_hash      = row.password_hash,
+        display_name       = row.display_name,
+        logged_in_citizens = decodeJson(row.logged_in_citizens),
+    }
+end
+
 ---Reads a single mail account (nil if no row matches); the email match is case-insensitive.
 ---Read-only.
 ---@param email string
@@ -258,10 +351,17 @@ end
 ---@return boolean
 function store.insertAccount(email, passwordHash, displayName, createdByCid)
     local ok = pcall(function()
-        MySQL.insert.await([[
-            INSERT INTO phone_mail_accounts (email, password_hash, display_name, messages, logged_in_citizens, created_by_cid)
-            VALUES (?, ?, ?, '[]', '[]', ?)
-        ]], { email, passwordHash, displayName, createdByCid })
+        if unreadColumn then
+            MySQL.insert.await([[
+                INSERT INTO phone_mail_accounts (email, password_hash, display_name, messages, logged_in_citizens, created_by_cid, unread_inbox)
+                VALUES (?, ?, ?, '[]', '[]', ?, 0)
+            ]], { email, passwordHash, displayName, createdByCid })
+        else
+            MySQL.insert.await([[
+                INSERT INTO phone_mail_accounts (email, password_hash, display_name, messages, logged_in_citizens, created_by_cid)
+                VALUES (?, ?, ?, '[]', '[]', ?)
+            ]], { email, passwordHash, displayName, createdByCid })
+        end
     end)
     return ok
 end
@@ -275,47 +375,52 @@ function store.countAccountsCreatedBy(citizenid)
     return tonumber(n) or 0
 end
 
----Adds a citizenid to an account's logged-in list. Idempotent.
+---Adds a citizenid to an account's logged-in list. Idempotent. The session index row is written
+---on the idempotent path too, so a session that predates the index (or one an external write
+---added to the JSON) picks up its row here rather than waiting for a boot. Runs under the mailbox
+---lock, since the list is rewritten whole like the messages are.
 ---@param email string
 ---@param citizenid string
 ---@return boolean
 function store.addSession(email, citizenid)
-    local acc = store.getAccount(email); if not acc then return false end
-    -- Mirrored on the idempotent path too, so a session that predates the index (or one an
-    -- external write added to the JSON) picks up its row here rather than waiting for a boot.
-    MySQL.insert.await(
-        'INSERT IGNORE INTO phone_mail_sessions (citizenid, email) VALUES (?, ?)', { citizenid, acc.email })
-    for i = 1, #acc.logged_in_citizens do
-        if acc.logged_in_citizens[i] == citizenid then return true end
-    end
-    acc.logged_in_citizens[#acc.logged_in_citizens + 1] = citizenid
-    local affected = MySQL.update.await(
-        'UPDATE phone_mail_accounts SET logged_in_citizens = ? WHERE email = ?',
-        { encodeJson(acc.logged_in_citizens), email }
-    )
-    return (affected or 0) > 0
+    return withMailbox(email, function()
+        local acc = store.getAccount(email); if not acc then return false end
+        MySQL.insert.await(
+            'INSERT IGNORE INTO phone_mail_sessions (citizenid, email) VALUES (?, ?)', { citizenid, acc.email })
+        for i = 1, #acc.logged_in_citizens do
+            if acc.logged_in_citizens[i] == citizenid then return true end
+        end
+        acc.logged_in_citizens[#acc.logged_in_citizens + 1] = citizenid
+        local affected = MySQL.update.await(
+            'UPDATE phone_mail_accounts SET logged_in_citizens = ? WHERE email = ?',
+            { encodeJson(acc.logged_in_citizens), email }
+        )
+        return (affected or 0) > 0
+    end)
 end
 
 ---Removes a citizenid from an account's logged-in list. No-op when the citizenid was never in
----the list.
+---the list. Runs under the mailbox lock.
 ---@param email string
 ---@param citizenid string
 ---@return boolean
 function store.removeSession(email, citizenid)
-    local acc = store.getAccount(email); if not acc then return false end
-    local filtered = {}
-    for i = 1, #acc.logged_in_citizens do
-        if acc.logged_in_citizens[i] ~= citizenid then
-            filtered[#filtered + 1] = acc.logged_in_citizens[i]
+    return withMailbox(email, function()
+        local acc = store.getAccount(email); if not acc then return false end
+        local filtered = {}
+        for i = 1, #acc.logged_in_citizens do
+            if acc.logged_in_citizens[i] ~= citizenid then
+                filtered[#filtered + 1] = acc.logged_in_citizens[i]
+            end
         end
-    end
-    local affected = MySQL.update.await(
-        'UPDATE phone_mail_accounts SET logged_in_citizens = ? WHERE email = ?',
-        { encodeJson(filtered), email }
-    )
-    MySQL.update.await(
-        'DELETE FROM phone_mail_sessions WHERE citizenid = ? AND email = ?', { citizenid, acc.email })
-    return (affected or 0) > 0
+        local affected = MySQL.update.await(
+            'UPDATE phone_mail_accounts SET logged_in_citizens = ? WHERE email = ?',
+            { encodeJson(filtered), email }
+        )
+        MySQL.update.await(
+            'DELETE FROM phone_mail_sessions WHERE citizenid = ? AND email = ?', { citizenid, acc.email })
+        return (affected or 0) > 0
+    end)
 end
 
 ---Lists every account the given citizenid is currently logged into, as an indexed join over
@@ -340,86 +445,150 @@ function store.listAccountsForCitizen(citizenid)
     return rows
 end
 
----Appends a message to an account's messages array, pruning the oldest past `maxRetained`.
----Returns false if the account doesn't exist.
+---The addresses of every mailbox the citizenid is signed into, oldest first, without decoding a
+---single messages blob; the same confirmed join as listAccountsForCitizen. Read-only.
+---@param citizenid string
+---@return string[] emails
+function store.listEmailsForCitizen(citizenid)
+    local rows = MySQL.query.await([[
+        SELECT a.email
+        FROM phone_mail_sessions s
+        JOIN phone_mail_accounts a ON a.email = s.email
+        WHERE s.citizenid = ?
+          AND JSON_SEARCH(a.logged_in_citizens, 'one', ?) IS NOT NULL
+        ORDER BY a.created_at ASC
+    ]], { citizenid, citizenid }) or {}
+    local out = {}
+    for i = 1, #rows do out[i] = rows[i].email end
+    return out
+end
+
+---Writes an account's whole messages blob, and the unread count recomputed from that same array,
+---so the count is never maintained by increments that could drift from the mail itself. Every
+---message write goes through here, under the mailbox lock.
+---@param email string
+---@param messages table[]
+---@return integer affected
+local function writeMessages(email, messages)
+    if not unreadColumn then
+        return MySQL.update.await(
+            'UPDATE phone_mail_accounts SET messages = ? WHERE email = ?',
+            { encodeJson(messages), email }
+        ) or 0
+    end
+    return MySQL.update.await(
+        'UPDATE phone_mail_accounts SET messages = ?, unread_inbox = ? WHERE email = ?',
+        { encodeJson(messages), countUnread(messages), email }
+    ) or 0
+end
+
+---Counts one mailbox's unread inbox mail from its blob and stores the number, under the mailbox
+---lock. Only a row whose count is unknown (imported, or written before the column existed) takes
+---this path, once.
+---@param email string
+---@return integer unread
+local function recountUnread(email)
+    return withMailbox(email, function()
+        local acc = store.getAccount(email); if not acc then return 0 end
+        local n = countUnread(acc.messages)
+        MySQL.update.await('UPDATE phone_mail_accounts SET unread_inbox = ? WHERE email = ?', { n, email })
+        return n
+    end)
+end
+
+---Fills unread_inbox for every mailbox that has no count yet. Runs after the schema boots, so the
+---first badge after an update reads numbers instead of decoding every blob; anything it misses is
+---counted the first time its badge is asked for.
+---@return integer filled
+function store.backfillUnread()
+    if not unreadColumn then return 0 end
+    local rows = MySQL.query.await('SELECT email FROM phone_mail_accounts WHERE unread_inbox IS NULL') or {}
+    for i = 1, #rows do
+        recountUnread(rows[i].email)
+        Wait(0)
+    end
+    return #rows
+end
+
+---Appends a message to an account's messages array, pruning the oldest past `maxRetained`, under
+---the mailbox lock. Returns false if the account doesn't exist; on success the account as written
+---comes back too, so a sender needs no second read for its signed-in list.
 ---@param email string
 ---@param message table
 ---@param maxRetained number cap on stored messages per account; oldest pruned first
----@return boolean
+---@return boolean appended
+---@return table|nil account hydrated account, messages as written
 function store.appendMessage(email, message, maxRetained)
-    local acc = store.getAccount(email); if not acc then return false end
-    acc.messages[#acc.messages + 1] = message
+    return withMailbox(email, function()
+        local acc = store.getAccount(email); if not acc then return false end
+        acc.messages[#acc.messages + 1] = message
 
-    if maxRetained and #acc.messages > maxRetained then
-        local trimmed = {}
-        local offset = #acc.messages - maxRetained
-        for i = offset + 1, #acc.messages do
-            trimmed[#trimmed + 1] = acc.messages[i]
+        if maxRetained and #acc.messages > maxRetained then
+            local trimmed = {}
+            local offset = #acc.messages - maxRetained
+            for i = offset + 1, #acc.messages do
+                trimmed[#trimmed + 1] = acc.messages[i]
+            end
+            acc.messages = trimmed
         end
-        acc.messages = trimmed
-    end
-    acc.messages = fitBudget(acc.messages)
+        acc.messages = fitBudget(acc.messages)
 
-    local affected = MySQL.update.await(
-        'UPDATE phone_mail_accounts SET messages = ? WHERE email = ?',
-        { encodeJson(acc.messages), email }
-    )
-    return (affected or 0) > 0
+        return writeMessages(email, acc.messages) > 0, acc
+    end)
 end
 
 ---Mutates a single message inside the account's JSON by id via `apply(message) -> message|nil`;
----apply returning nil deletes the message. Returns false when no message matched.
+---apply returning nil deletes the message. Returns false when no message matched. Runs under the
+---mailbox lock.
 ---@param email string
 ---@param messageId string
 ---@param apply fun(msg: table): table|nil
 ---@return boolean updated true if a message was found + persisted
 function store.mutateMessage(email, messageId, apply)
-    local acc = store.getAccount(email); if not acc then return false end
-    local rewritten = {}
-    local hit = false
-    for i = 1, #acc.messages do
-        local m = acc.messages[i]
-        if m.id == messageId then
-            hit = true
-            local replaced = apply(m)
-            if replaced ~= nil then
-                rewritten[#rewritten + 1] = replaced
+    return withMailbox(email, function()
+        local acc = store.getAccount(email); if not acc then return false end
+        local rewritten = {}
+        local hit = false
+        for i = 1, #acc.messages do
+            local m = acc.messages[i]
+            if m.id == messageId then
+                hit = true
+                local replaced = apply(m)
+                if replaced ~= nil then
+                    rewritten[#rewritten + 1] = replaced
+                end
+            else
+                rewritten[#rewritten + 1] = m
             end
-        else
-            rewritten[#rewritten + 1] = m
         end
-    end
-    if not hit then return false end
-    local affected = MySQL.update.await(
-        'UPDATE phone_mail_accounts SET messages = ? WHERE email = ?',
-        { encodeJson(rewritten), email }
-    )
-    return (affected or 0) > 0
+        if not hit then return false end
+        return writeMessages(email, rewritten) > 0
+    end)
 end
 
 ---Marks every listed message id as read in a single read-modify-write, so a "mark all" cannot
----lose updates by racing N concurrent single-message writes. Ids not present are ignored.
+---lose updates by racing N concurrent single-message writes. Ids not present are ignored. Runs
+---under the mailbox lock.
 ---@param email string
 ---@param ids string[]
 ---@return number changed count of messages newly flagged read
 function store.markManyRead(email, ids)
-    local acc = store.getAccount(email); if not acc then return 0 end
-    local want = {}
-    for i = 1, #ids do want[ids[i]] = true end
-    local changed = 0
-    for i = 1, #acc.messages do
-        local m = acc.messages[i]
-        if want[m.id] and m.read ~= true then
-            m.read = true
-            changed = changed + 1
+    return withMailbox(email, function()
+        local acc = store.getAccount(email); if not acc then return 0 end
+        local want = {}
+        for i = 1, #ids do want[ids[i]] = true end
+        local changed = 0
+        for i = 1, #acc.messages do
+            local m = acc.messages[i]
+            if want[m.id] and m.read ~= true then
+                m.read = true
+                changed = changed + 1
+            end
         end
-    end
-    if changed == 0 then return 0 end
-    MySQL.update.await(
-        'UPDATE phone_mail_accounts SET messages = ? WHERE email = ?',
-        { encodeJson(acc.messages), email }
-    )
-    return changed
+        if changed == 0 then return 0 end
+        writeMessages(email, acc.messages)
+        return changed
+    end)
 end
 
 ---Overwrites an account's stored password hash.
@@ -437,19 +606,28 @@ function store.deleteAccount(email)
     MySQL.update.await('DELETE FROM phone_mail_sessions WHERE email = ?', { email })
 end
 
----Counts unread inbox messages across every Mail account the citizen is signed into.
----Read-only.
+---Counts unread inbox messages across every Mail account the citizen is signed into. Every badge
+---push asks for this, so it reads the stored per-mailbox count rather than decoding each blob; a
+---mailbox with no count yet is counted from its blob once and remembered.
 ---@param citizenid string
 ---@return number
 function store.unreadCount(citizenid)
-    local accounts = store.listAccountsForCitizen(citizenid)
+    if not unreadColumn then
+        local n = 0
+        for _, acc in ipairs(store.listAccountsForCitizen(citizenid)) do n = n + countUnread(acc.messages) end
+        return n
+    end
+    local rows = MySQL.query.await([[
+        SELECT a.email, a.unread_inbox
+        FROM phone_mail_sessions s
+        JOIN phone_mail_accounts a ON a.email = s.email
+        WHERE s.citizenid = ?
+          AND JSON_SEARCH(a.logged_in_citizens, 'one', ?) IS NOT NULL
+    ]], { citizenid, citizenid }) or {}
     local n = 0
-    for i = 1, #accounts do
-        local msgs = accounts[i].messages
-        for j = 1, #msgs do
-            local m = msgs[j]
-            if m.folder == 'inbox' and m.read ~= true then n = n + 1 end
-        end
+    for i = 1, #rows do
+        local count = tonumber(rows[i].unread_inbox)
+        n = n + (count or recountUnread(rows[i].email))
     end
     return n
 end

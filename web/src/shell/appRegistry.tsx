@@ -112,43 +112,20 @@ const APP_REGISTRY = {
 } satisfies Record<string, AppEntry>;
 
 export type AppId = keyof typeof APP_REGISTRY;
-const APP_IDS = Object.keys(APP_REGISTRY) as readonly AppId[];
 
 export function getAppEntry(id: AppId): AppEntry {
     return APP_REGISTRY[id];
 }
 
-// Apps show a real frozen "where you left off" card by DEFAULT. Backgrounded apps are
-// SUSPENDED (see web/src/shell/deckActive.ts): a boolean plumbed down each app's subtree
-// flips to false when it is not the interactive foreground instance, and the shared
-// choke points (useGameLoop, useOnlineLobby, useSelfLocation, the ryde/photogram/cookie/
-// blocks effects) fold it into their gates so the loop / poll / render / media halts and
-// the last frame simply freezes at ~0 CPU. That makes maps, ryde, photogram, cookie, the
-// arcade + board games, and phone all cheap to keep mounted and previewable.
-//
-// camera is the ONLY genuine exception: it drives a GTA-native cell-cam through a
-// singleton three.js GameRender bound to a single canvas that the deck never re-parents,
-// so it can't be a live card. It suspends the native cam on background (deckActive) and
-// its switcher card falls back to the app icon.
 const PREVIEW_EXCLUDE = new Set<AppId>(['camera']);
 
-// Custom apps render inside a cross-origin iframe: it cannot be captured for a live
-// switcher card and re-parenting the node would reload it, so they opt out of the
-// preview deck exactly like camera does and fall back to their icon card.
 export function isPreviewApp(id: AppId): boolean {
     if (isCustomApp(id)) return false;
     return !PREVIEW_EXCLUDE.has(id);
 }
 
-// Apps this device does not have. The registry stays complete (AppId must keep naming every
-// app or the tree stops type-checking); the ids are refused at asAppId instead.
 const EXCLUDED_APPS = new Set<string>(device.excludedApps);
 
-// A raw id becomes an openable AppId when it is either a statically-registered app
-// or a runtime-registered custom app. Every downstream AppId-typed site keys off the
-// id string, so widening the union at this single boundary is enough to open it -
-// and refusing it here is what stops a notification tap, a deeplink, Control Center,
-// sd-phone:launchApp or the custom-app SDK from opening an app this device lacks.
 export function asAppId(id: string | null | undefined): AppId | null {
     if (id == null) return null;
     if (EXCLUDED_APPS.has(id)) return null;
@@ -158,20 +135,30 @@ export function asAppId(id: string | null | undefined): AppId | null {
 }
 
 const loadedApps = new Set<string>();
+const coldWarmers = new Map<string, () => void>();
 
 export function isAppLoaded(id: AppId): boolean {
     return !(id in APP_REGISTRY) || loadedApps.has(id);
 }
 
-export function preloadApp(id: AppId): Promise<void> {
+function loadApp(id: AppId): Promise<void> {
     if (isAppLoaded(id)) return Promise.resolve();
     const e = getAppEntry(id);
     return e.load().then(m => {
         const mod = m as { default?: ComponentType<AppComponentProps>; warm?: () => void } | undefined;
         if (mod?.default) e.Resolved = mod.default;
         loadedApps.add(id);
-        if (typeof mod?.warm === 'function') mod.warm();
+        if (typeof mod?.warm === 'function') coldWarmers.set(id, mod.warm);
     }, () => { loadedApps.add(id); });
+}
+
+export function preloadApp(id: AppId): Promise<void> {
+    return loadApp(id).then(() => {
+        const warm = coldWarmers.get(id);
+        if (!warm) return;
+        coldWarmers.delete(id);
+        warm();
+    });
 }
 
 let preloadPaused = false;
@@ -184,9 +171,8 @@ export function setPreloadPaused(paused: boolean): void {
     if (!paused) preloadResume?.();
 }
 
-export function preloadAllApps(ids?: readonly string[]): void {
-    const wanted = ids ? new Set(ids) : null;
-    const queue = wanted ? APP_IDS.filter(id => wanted.has(id)) : APP_IDS.slice();
+export function preloadApps(ids: readonly string[]): void {
+    const queue = [...new Set(ids)].filter((id): id is AppId => id in APP_REGISTRY && !EXCLUDED_APPS.has(id));
     const schedule = () => {
         if (preloadPaused || preloadBusy) return;
         if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => pump(), { timeout: 200 });
@@ -197,7 +183,7 @@ export function preloadAllApps(ids?: readonly string[]): void {
         const id = queue.shift();
         if (!id) { preloadResume = null; return; }
         preloadBusy = true;
-        void preloadApp(id).finally(() => { preloadBusy = false; schedule(); });
+        void loadApp(id).finally(() => { preloadBusy = false; schedule(); });
     };
     preloadResume = schedule;
     schedule();

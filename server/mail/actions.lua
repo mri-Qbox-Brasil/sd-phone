@@ -47,8 +47,16 @@ local MAX_ACTION_DATA_BYTES = 16384
 local ACTION_GAP_MS = 1000
 
 ---@type integer Minimum gap between accepted sends, per character. A send rewrites the whole
----messages blob once per recipient, so this is the only thing bounding that cost per second.
+---messages blob once per recipient, so this bounds that cost per second.
 local SEND_GAP_MS = 2000
+---@type integer Rolling window for the flood limits below (ms), from configs/mail.lua.
+local FLOOD_WINDOW_MS = math.floor((tonumber(mailCfg.SendWindow) or 600) * 1000)
+---@type integer Player sends one character may make inside the window. The gap alone still let a
+---script send 300 mails in ten minutes, each rewriting up to 21 mailboxes.
+local MAX_SENDS = math.floor(tonumber(mailCfg.MaxSendsPerWindow) or 30)
+---@type integer Player mail one mailbox takes in inside the window, from every sender together;
+---past it the mailbox simply gets no copy. System mail from other resources is never counted.
+local MAX_RECEIVED = math.floor(tonumber(mailCfg.MaxReceivedPerWindow) or 40)
 ---@type integer Minimum gap between accepted draft saves, per character. Saving a draft is a
 ---button, not an autosave, so a real composer never comes close.
 local DRAFT_GAP_MS = 1000
@@ -344,7 +352,7 @@ function actions.deliver(pushes)
                     },
                 } or nil,
             })
-            badges.push(src)
+            badges.pushApp(src, 'mail')
         end
     end
 end
@@ -393,7 +401,8 @@ function actions.repairOrphanAccounts()
 end
 
 ---Creates a brand-new email account and signs the caller straight into it. Every field is
----validated server-side; the password is hashed and mirrored into the accounts engine.
+---validated server-side; the password lives in the accounts engine alone, so the mailbox row's
+---own credential column is left empty.
 ---@param source number
 ---@param payload { email?: string, password?: string, displayName?: string, phone?: string }
 ---@return table
@@ -422,7 +431,7 @@ function actions.signUp(source, payload)
     end
     -- The number is deliberately NOT unique: one person runs several mailboxes off one phone.
     -- Recovery stays possible because a reset is identified by the address, not by the number.
-    if store.getAccount(email) then
+    if store.getAccountSummary(email) then
         return fail('mail.emailAlreadyRegistered', 'That email is already registered')
     end
 
@@ -431,7 +440,7 @@ function actions.signUp(source, payload)
         return fail('mail.mostAccountsSignedIn', 'You can have at most {n} accounts signed in', { n = mailCfg.MaxAccountsPerPlayer })
     end
 
-    if not store.insertAccount(email, store.hashPassword(password), displayName, me.cid) then
+    if not store.insertAccount(email, '', displayName, me.cid) then
         return fail('mail.failedCreateAccount', 'Failed to create account')
     end
     store.addSession(email, me.cid)
@@ -449,13 +458,30 @@ function actions.signUp(source, payload)
     end
     actions.drainPending(me.cid, email)
 
-    local acc = store.getAccount(email)
+    local acc = store.getAccountSummary(email)
     if not acc then return fail('mail.accountVanishedAfterCreation', 'Account vanished after creation') end
     return ok({ account = serializeAccount(acc) })
 end
 
+---Moves a mailbox that only matched its pre-engine digest onto the engine's scrypt hash: the
+---engine account is rewritten, or created if the mailbox predates it. Returns the engine account
+---when one now holds the password, so the caller knows the old column can be cleared.
+---@param acc table mailbox row
+---@param engineAcc table|nil the mailbox's engine account, when it has one
+---@param plain string the password that just matched
+---@return table|nil engineAcc
+local function adoptLegacyPassword(acc, engineAcc, plain)
+    if engineAcc then
+        acctStore.setPassword(engineAcc.id, acctStore.hashPassword(plain))
+        return engineAcc
+    end
+    local id = acctStore.insertAccount('mail', acc.email, acc.display_name, acctStore.hashPassword(plain), acc.email, nil, nil)
+    return id and acctStore.getAccountById(id) or nil
+end
+
 ---Signs into an existing email account; any player who knows the password may sign in. The
----accounts engine is verified first, then the legacy hash column. Idempotent.
+---accounts engine is verified first, then the mailbox's pre-engine digest. Spends the engine's
+---shared sign-in budget, per caller and per mailbox, before any password is hashed. Idempotent.
 ---@param source number
 ---@param payload { email?: string, password?: string }
 ---@return table
@@ -470,13 +496,23 @@ function actions.signIn(source, payload)
     if #payload.password > MAX_SIGNIN_PASSWORD_LEN then
         return fail('mail.emailPasswordIncorrect', 'Email or password is incorrect')
     end
+    if not acctActions.allowGuess(me.cid, 'accounts:login') then
+        return fail('mail.tooManySignInAttempts', 'Too many sign-in attempts. Try again shortly')
+    end
 
-    local acc = store.getAccount(email)
+    local acc = store.getAccountSummary(email)
+    if acc and not acctActions.allowGuessOn('mail', email) then
+        return fail('mail.tooManySignInAttempts', 'Too many sign-in attempts. Try again shortly')
+    end
     local valid = false
     if acc then
         local engineAcc = acctStore.getAccount('mail', email)
         if engineAcc then valid = acctActions.verifyPassword(engineAcc, payload.password) end
-        if not valid then valid = acc.password_hash == store.hashPassword(payload.password) end
+        if not valid and acc.password_hash ~= '' and acc.password_hash == store.hashPassword(payload.password) then
+            valid = true
+            engineAcc = adoptLegacyPassword(acc, engineAcc, payload.password)
+        end
+        if valid and engineAcc and acc.password_hash ~= '' then store.setPasswordHash(email, '') end
     end
     if not valid then
         return fail('mail.emailPasswordIncorrect', 'Email or password is incorrect')
@@ -494,7 +530,7 @@ function actions.signIn(source, payload)
 
     store.addSession(email, me.cid)
     actions.drainPending(me.cid, email)
-    return ok({ account = serializeAccount(store.getAccount(email) or acc) })
+    return ok({ account = serializeAccount(store.getAccountSummary(email) or acc) })
 end
 
 ---Signs out of an account on this player's phone; the account survives, only the caller's
@@ -527,11 +563,14 @@ function actions.send(source, payload)
     local fromEmail = trim(payload.fromEmail):lower()
     if fromEmail == '' then return fail('mail.senderAccountRequired', 'Sender account is required') end
 
-    local sender = store.getAccount(fromEmail)
+    local sender = store.getAccountSummary(fromEmail)
     if not sender then return fail('mail.senderAccountNotFound', 'Sender account not found') end
 
     if not lib.table.contains(sender.logged_in_citizens, me.cid) then
         return fail('mail.notSignedIntoAccount', 'You are not signed into that account')
+    end
+    if not util.rateLimit(me.cid, 'mail:sendBudget', FLOOD_WINDOW_MS, MAX_SENDS) then
+        return fail('mail.sendLimitReached', 'You have sent too much mail. Try again later')
     end
 
     local toRaw = payload.to or {}
@@ -573,22 +612,23 @@ function actions.send(source, payload)
     local pushes = {}
     for i = 1, #recipients do
         local addr = recipients[i]
-        local recipient = store.getAccount(addr)
-        if recipient then
-            local inboxMessage = {
-                id      = store.newId(),
-                folder  = 'inbox',
-                from    = { name = sender.display_name, email = sender.email },
-                to      = recipients,
-                subject = subject,
-                body    = body,
-                sentAt  = sentAt,
-                read    = false,
-                flagged = false,
-                attachments = attachments,
-            }
-            store.appendMessage(addr, inboxMessage, mailCfg.MaxMessagesPerAccount)
-
+        local inboxMessage = {
+            id      = store.newId(),
+            folder  = 'inbox',
+            from    = { name = sender.display_name, email = sender.email },
+            to      = recipients,
+            subject = subject,
+            body    = body,
+            sentAt  = sentAt,
+            read    = false,
+            flagged = false,
+            attachments = attachments,
+        }
+        local delivered, recipient = false, nil
+        if util.rateLimit('mailbox\0' .. addr, 'mail:receive', FLOOD_WINDOW_MS, MAX_RECEIVED) then
+            delivered, recipient = store.appendMessage(addr, inboxMessage, mailCfg.MaxMessagesPerAccount)
+        end
+        if delivered and recipient then
             for j = 1, #recipient.logged_in_citizens do
                 pushes[#pushes + 1] = {
                     citizenid = recipient.logged_in_citizens[j],
@@ -672,22 +712,21 @@ function actions.systemSend(mail)
     local pushes = {}
     for i = 1, #recipients do
         local addr = recipients[i]
-        local recipient = store.getAccount(addr)
-        if recipient then
-            local inboxMessage = {
-                id      = store.newId(),
-                folder  = 'inbox',
-                from    = { name = fromName, email = fromEmail },
-                to      = recipients,
-                subject = subject,
-                body    = body,
-                sentAt  = sentAt,
-                read    = false,
-                flagged = false,
-                attachments = attachments,
-                action  = action,
-            }
-            store.appendMessage(addr, inboxMessage, mailCfg.MaxMessagesPerAccount)
+        local inboxMessage = {
+            id      = store.newId(),
+            folder  = 'inbox',
+            from    = { name = fromName, email = fromEmail },
+            to      = recipients,
+            subject = subject,
+            body    = body,
+            sentAt  = sentAt,
+            read    = false,
+            flagged = false,
+            attachments = attachments,
+            action  = action,
+        }
+        local appended, recipient = store.appendMessage(addr, inboxMessage, mailCfg.MaxMessagesPerAccount)
+        if appended and recipient then
             delivered = delivered + 1
             sentId = sentId or inboxMessage.id
 
@@ -777,7 +816,7 @@ function actions.saveDraft(source, payload)
     local fromEmail = trim(payload.fromEmail):lower()
     if fromEmail == '' then return fail('mail.senderAccountRequired', 'Sender account is required') end
 
-    local sender = store.getAccount(fromEmail)
+    local sender = store.getAccountSummary(fromEmail)
     if not sender then return fail('mail.senderAccountNotFound', 'Sender account not found') end
 
     if not lib.table.contains(sender.logged_in_citizens, me.cid) then
@@ -821,19 +860,20 @@ function actions.saveDraft(source, payload)
 end
 
 ---Ownership gate for the per-message mutators: the caller's citizenid must appear in the
----account's signed-in list.
+---account's signed-in list. It reads the account without its messages blob: the mutator that
+---follows reads the blob itself, inside the mailbox lock, and a copy fetched here would be stale
+---by then, so opening one mail decodes the blob once rather than twice. Rate-limited here rather
+---than per action because markRead/toggleFlag/move are otherwise reachable at unlimited rate.
 ---@param source number
 ---@param accountEmail string
 ---@return string|nil cid, table|nil err
 local function requireOwnership(source, accountEmail)
     local me = whois(source); if not me then return nil, fail('mail.playerNotFound', 'Player not found') end
     if type(accountEmail) ~= 'string' or accountEmail == '' then return nil, fail('mail.accountEmailRequired', 'Account email is required') end
-    -- Gated here rather than per action: getAccount below is the whole-blob decode every one of
-    -- these mutators pays twice, and markRead/toggleFlag/move are reachable at unlimited rate.
     if not util.rateLimit(me.cid, 'mail:mutate', MUTATE_WINDOW_MS, MUTATE_PER_WINDOW) then
         return nil, fail('mail.slowDown', 'Slow down')
     end
-    local acc = store.getAccount(accountEmail); if not acc then return nil, fail('mail.accountNotFound', 'Account not found') end
+    local acc = store.getAccountSummary(accountEmail); if not acc then return nil, fail('mail.accountNotFound', 'Account not found') end
     if lib.table.contains(acc.logged_in_citizens, me.cid) then return me.cid, nil end
     return nil, fail('mail.notSignedIntoAccount', 'You are not signed into that account')
 end

@@ -24,7 +24,7 @@ import type { CustomTone, ToneKind } from '@/apps/settings/tones';
 import { warmYouTube } from '@/apps/settings/tonePlayer';
 import { clampRecipe, isCustomPaletteId, MAX_CUSTOM_PALETTES, PALETTE_NAME_MAX } from '@/apps/settings/appearance/paletteRamp';
 import { DEFAULT_ACCENT, isAccentChoice } from '@/apps/settings/appearance/accentRamp';
-import { DEFAULT_SHELL, isShellId, SHELLS, shellFor } from '@/shell/shells';
+import { isShellPick, MATCH_SHELL, resolveShell, SHELLS, shellFor, type PhoneDesign, type ShellRules } from '@/shell/shells';
 import { shellHostsPet } from '@/shell/chassis';
 import type { PaletteMode, PaletteRecipe } from '@/apps/settings/appearance/paletteRamp';
 
@@ -37,7 +37,7 @@ function loadThemeLocal(): Theme {
     } catch { return 'light'; }
 }
 function saveThemeLocal(v: Theme) {
-    try { window.localStorage.setItem(THEME_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(THEME_KEY, v); } catch {}
 }
 
 export type DarkTheme = 'graphite' | 'black' | 'warm' | 'midnight' | 'moss' | 'plum' | 'slate' | 'ocean' | 'rose' | 'clay';
@@ -79,29 +79,30 @@ function loadPalettesLocal(): CustomPalette[] {
     catch { return []; }
 }
 function savePalettesLocal(v: CustomPalette[]) {
-    try { window.localStorage.setItem(PALETTES_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(PALETTES_KEY, JSON.stringify(v)); } catch {}
 }
 function savePaletteChoiceLocal(key: string, v: string) {
-    try { window.localStorage.setItem(key, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(key, v); } catch {}
 }
 const DARK_THEME_KEY = 'sd-phone:darkTheme';
 const LIGHT_THEME_KEY = 'sd-phone:lightTheme';
 const SHELL_KEY = 'sd-phone:shell';
+/** The player's stored shell choice in the browser: a shell, or MATCH_SHELL for anyone who never picked. */
 function loadShellLocal(): string {
     try {
         const v = window.localStorage.getItem(SHELL_KEY);
-        return isShellId(v) ? v : DEFAULT_SHELL;
-    } catch { return DEFAULT_SHELL; }
+        return isShellPick(v) ? v : MATCH_SHELL;
+    } catch { return MATCH_SHELL; }
 }
 function saveShellLocal(v: string) {
-    try { window.localStorage.setItem(SHELL_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(SHELL_KEY, v); } catch {}
 }
 const GAME_TIME_KEY = 'sd-phone:gameTime';
 function loadGameTimeLocal(): boolean {
     try { return window.localStorage.getItem(GAME_TIME_KEY) === '1'; } catch { return false; }
 }
 function saveGameTimeLocal(v: boolean) {
-    try { window.localStorage.setItem(GAME_TIME_KEY, v ? '1' : '0'); } catch { /* ignore */ }
+    try { window.localStorage.setItem(GAME_TIME_KEY, v ? '1' : '0'); } catch {}
 }
 const ACCENT_KEY = 'sd-phone:accent';
 function loadAccentLocal(): string {
@@ -111,7 +112,7 @@ function loadAccentLocal(): string {
     } catch { return DEFAULT_ACCENT; }
 }
 function saveAccentLocal(v: string) {
-    try { window.localStorage.setItem(ACCENT_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(ACCENT_KEY, v); } catch {}
 }
 const DARK_THEMES: DarkTheme[] = ['graphite', 'black', 'warm', 'midnight', 'moss', 'plum', 'slate', 'ocean', 'rose', 'clay'];
 const LIGHT_THEMES: LightTheme[] = ['silver', 'snow', 'linen', 'sky', 'mint', 'blush', 'sand', 'lavender', 'stone', 'dusk'];
@@ -122,7 +123,7 @@ function loadLightThemeLocal(): LightTheme {
     } catch { return 'silver'; }
 }
 function saveLightThemeLocal(v: LightTheme) {
-    try { window.localStorage.setItem(LIGHT_THEME_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(LIGHT_THEME_KEY, v); } catch {}
 }
 function loadDarkThemeLocal(): DarkTheme {
     try {
@@ -131,7 +132,7 @@ function loadDarkThemeLocal(): DarkTheme {
     } catch { return 'graphite'; }
 }
 function saveDarkThemeLocal(v: DarkTheme) {
-    try { window.localStorage.setItem(DARK_THEME_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(DARK_THEME_KEY, v); } catch {}
 }
 
 interface Security { passcode: string | null; faceId: boolean }
@@ -143,18 +144,13 @@ function loadSecurityLocal(): Security {
             const p = JSON.parse(raw) as Security;
             return { passcode: typeof p.passcode === 'string' ? p.passcode : null, faceId: !!p.faceId };
         }
-    } catch { /* ignore */ }
+    } catch {}
     return { passcode: '1234', faceId: false };
 }
 function saveSecurityLocal(s: Security) {
-    try { window.localStorage.setItem(SECURITY_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(SECURITY_KEY, JSON.stringify(s)); } catch {}
 }
 
-// hydrate() reads every persisted setting in one settings:get. On first join the phone NUI mounts
-// before the framework finishes loading the character, so that call can't resolve the citizenid and
-// comes back empty. Primary recovery is the client's sd-phone:client:characterLoaded push (App.tsx
-// re-runs hydrate the moment the framework reports the player in - multichar picks can outlast any
-// polling window). This bounded retry remains as the fallback for setups with no loaded event.
 const HYDRATE_RETRY_MS = 1500;
 const HYDRATE_MAX_RETRIES = 20;
 
@@ -165,17 +161,15 @@ function loadWallpaperLocal(): string | null {
     try { return window.localStorage.getItem(WALLPAPER_KEY); } catch { return null; }
 }
 function saveWallpaperLocal(v: string) {
-    try { window.localStorage.setItem(WALLPAPER_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(WALLPAPER_KEY, v); } catch {}
 }
 
-// The home screen's own wallpaper; the legacy single key above doubles as the lock
-// wallpaper so an existing dev profile keeps its wallpaper on both screens.
 const WALLPAPER_HOME_KEY = 'sd-phone:wallpaperHome';
 function loadWallpaperHomeLocal(): string | null {
     try { return window.localStorage.getItem(WALLPAPER_HOME_KEY); } catch { return null; }
 }
 function saveWallpaperHomeLocal(v: string) {
-    try { window.localStorage.setItem(WALLPAPER_HOME_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(WALLPAPER_HOME_KEY, v); } catch {}
 }
 
 const BLUR_LOCK_KEY = 'sd-phone:blurLock';
@@ -186,13 +180,13 @@ function loadIslandPetLocal(): IslandPetId {
     catch { return 'none'; }
 }
 function saveIslandPetLocal(v: IslandPetId) {
-    try { window.localStorage.setItem(ISLAND_PET_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(ISLAND_PET_KEY, v); } catch {}
 }
 function loadBlurLocal(key: string): boolean {
     try { return window.localStorage.getItem(key) === '1'; } catch { return false; }
 }
 function saveBlurLocal(key: string, v: boolean) {
-    try { window.localStorage.setItem(key, v ? '1' : '0'); } catch { /* ignore */ }
+    try { window.localStorage.setItem(key, v ? '1' : '0'); } catch {}
 }
 
 const CUSTOM_WALLPAPERS_KEY = 'sd-phone:customWallpapers';
@@ -205,7 +199,7 @@ function loadCustomWallpapersLocal(): string[] {
     } catch { return []; }
 }
 function saveCustomWallpapersLocal(v: string[]) {
-    try { window.localStorage.setItem(CUSTOM_WALLPAPERS_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(CUSTOM_WALLPAPERS_KEY, JSON.stringify(v)); } catch {}
 }
 
 const clampVol = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
@@ -230,7 +224,7 @@ function loadAppLabelsLocal(): Record<string, string> {
     } catch { return {}; }
 }
 function saveAppLabelsLocal(v: Record<string, string>) {
-    try { window.localStorage.setItem(APP_LABELS_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(APP_LABELS_KEY, JSON.stringify(v)); } catch {}
 }
 
 export type MotionLevel = 'full' | 'reduced' | 'off';
@@ -262,11 +256,11 @@ function loadA11yLocal(): { motion: MotionLevel; boldText: boolean; textScale: n
     } catch { return { motion: 'full', boldText: false, textScale: 1 }; }
 }
 function saveA11yLocal(v: { motion: number; boldText: boolean; textScale: number }) {
-    try { window.localStorage.setItem(A11Y_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(A11Y_KEY, JSON.stringify(v)); } catch {}
 }
 
 function saveChatScaleLocal(v: number) {
-    try { window.localStorage.setItem(CHAT_SCALE_KEY, String(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(CHAT_SCALE_KEY, String(v)); } catch {}
 }
 
 const DENSITY_KEY = 'sd-phone:homeDensity';
@@ -277,7 +271,7 @@ function loadDensityLocal(): Density {
     } catch { return 'default'; }
 }
 function saveDensityLocal(v: Density) {
-    try { window.localStorage.setItem(DENSITY_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(DENSITY_KEY, v); } catch {}
 }
 const initialDensity: Density = isFiveM ? 'default' : loadDensityLocal();
 setDensity(initialDensity);
@@ -292,16 +286,22 @@ function loadIconScaleLocal(): number {
     } catch { return 1; }
 }
 function saveIconScaleLocal(v: number) {
-    try { window.localStorage.setItem(ICON_SCALE_KEY, String(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(ICON_SCALE_KEY, String(v)); } catch {}
 }
 const initialIconScale: number = isFiveM ? 1 : loadIconScaleLocal();
 setIconScale(initialIconScale);
 
 const initialLook = isFiveM ? DEFAULT_SHELL_LOOK : loadShellLookLocal();
+const initialShellPick = isFiveM ? MATCH_SHELL : loadShellLocal();
+
+/** The shell to draw for a state, from the player's pick, the phone in hand and the server's rules. */
+function shellOf(st: { shellPick: string; phoneLook: PhoneDesign; shellChoice: boolean; shellFollowsPhone: boolean; shellsAllowed: string[] }): string {
+    const rules: ShellRules = { choice: st.shellChoice, follows: st.shellFollowsPhone, allowed: st.shellsAllowed };
+    return resolveShell(st.shellPick, st.phoneLook, rules);
+}
 setExtraRow(initialLook.dockStyle === 'hidden');
 
 const PHONE_SCALE_KEY = 'sd-phone:phoneScale';
-// Shared by the phone frame scale and screen brightness; both are 0-100 sliders.
 const clampPhoneScale = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
 function loadPhoneScaleLocal(): number {
     try {
@@ -310,7 +310,7 @@ function loadPhoneScaleLocal(): number {
     } catch { return device.defaultScale; }
 }
 function savePhoneScaleLocal(v: number) {
-    try { window.localStorage.setItem(PHONE_SCALE_KEY, String(v)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(PHONE_SCALE_KEY, String(v)); } catch {}
 }
 
 export type PhoneAlign = DeviceAlign;
@@ -328,7 +328,7 @@ function loadPhoneAlignLocal(): PhoneAlign {
     } catch { return device.defaultAlign; }
 }
 function savePhoneAlignLocal(v: PhoneAlign) {
-    try { window.localStorage.setItem(PHONE_ALIGN_KEY, v); } catch { /* ignore */ }
+    try { window.localStorage.setItem(PHONE_ALIGN_KEY, v); } catch {}
 }
 
 interface ThemeState {
@@ -340,10 +340,17 @@ interface ThemeState {
     setLightTheme:     (t: LightThemeChoice) => void;
     accent:            string;
     setAccent:         (a: string) => void;
+    /** The shell drawn: the player's pick, or the design of the phone in hand, under the server's rules. */
     shell:             string;
+    /** What the player chose on the Phone Shell page: a shell, or MATCH_SHELL to follow the phone. */
+    shellPick:         string;
     setShell:          (s: string) => void;
     shellChoice:       boolean;
     shellsAllowed:     string[];
+    /** The design of the phone in hand, and whether the server lets the shell follow it. */
+    phoneLook:         PhoneDesign;
+    shellFollowsPhone: boolean;
+    setPhoneLook:      (look: PhoneDesign, follows?: boolean) => void;
     customPalettes:      CustomPalette[];
     saveCustomPalette:   (p: CustomPalette) => Promise<string | null>;
     deleteCustomPalette: (id: CustomPaletteId) => void;
@@ -432,7 +439,6 @@ interface ThemeState {
     faceId:      boolean;
     setFaceId:   (on: boolean) => void;
     setSecurity: (pin: string | null, faceId: boolean) => void;
-    /** Server-side first-run-setup flag for the acting profile; null until its hydrate lands. */
     setupDone: boolean | null;
     resetProfileVisuals: () => void;
     applyWallpaperProfile: (key: string | null) => void;
@@ -442,22 +448,18 @@ interface ThemeState {
 
 const initialSecurity = isFiveM ? { passcode: null, faceId: false } : loadSecurityLocal();
 
-// In-game last-known-wallpaper cache, keyed per phone profile (unique phones) or bare (stock
-// servers): painted in the same frame as the reveal so the first open never flashes the stock
-// wallpaper while the settings hydrate is in flight. The hydrate stays authoritative.
 const WALLPAPER_CACHE_BASE = 'sd-phone:wallpaperCache:v1';
 let wallpaperProfileKey: string | null = null;
 function wallpaperCacheKey(): string {
     return wallpaperProfileKey ? `${WALLPAPER_CACHE_BASE}:${wallpaperProfileKey}` : WALLPAPER_CACHE_BASE;
 }
 function cacheWallpapers(lock: string, home: string): void {
-    try { window.localStorage.setItem(wallpaperCacheKey(), JSON.stringify({ lock, home })); } catch { /* ignore */ }
+    try { window.localStorage.setItem(wallpaperCacheKey(), JSON.stringify({ lock, home })); } catch {}
 }
 function readWallpaperCache(): { lock?: string; home?: string } | null {
     try {
         const raw = window.localStorage.getItem(wallpaperCacheKey());
         if (!raw) return null;
-        // Pre-split caches stored a bare string that painted both screens.
         if (!raw.startsWith('{')) return { lock: raw, home: raw };
         const parsed: unknown = JSON.parse(raw);
         return parsed && typeof parsed === 'object' ? parsed as { lock?: string; home?: string } : null;
@@ -469,10 +471,6 @@ function persistSecurity(pin: string | null, face: boolean) {
     else saveSecurityLocal({ passcode: pin, faceId: face });
 }
 
-// Range sliders fire a persist per drag tick; store state must follow every tick, but one
-// server write per gesture is enough. Trailing timer, keyed per setting so concurrent
-// sliders never cancel each other's writes. The NUI document survives phone close/holster,
-// so a pending timer still fires - only a resource restart inside the window can drop one.
 const PERSIST_DEBOUNCE_MS = 300;
 const persistTimers: Record<string, number> = {};
 function persistDebounced(key: string, send: () => void) {
@@ -499,9 +497,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     darkTheme: isFiveM ? 'graphite' : loadDarkThemeLocal(),
     lightTheme: isFiveM ? 'silver' : loadLightThemeLocal(),
     accent: isFiveM ? DEFAULT_ACCENT : loadAccentLocal(),
-    shell: isFiveM ? DEFAULT_SHELL : loadShellLocal(),
+    shellPick: initialShellPick,
+    shell: resolveShell(initialShellPick, 'classic', { choice: true, follows: true, allowed: SHELLS.map(s => s.id) }),
     shellChoice: true,
     shellsAllowed: SHELLS.map(s => s.id),
+    phoneLook: 'classic',
+    shellFollowsPhone: true,
     customPalettes: isFiveM ? [] : loadPalettesLocal(),
     wallpaperLock: isFiveM ? lockscreenAsset : (loadWallpaperLocal() ?? devDefaultAsset),
     wallpaperHome: isFiveM ? lockscreenAsset : (loadWallpaperHomeLocal() ?? loadWallpaperLocal() ?? devDefaultAsset),
@@ -535,8 +536,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     gameTime: isFiveM ? false : loadGameTimeLocal(),
     reopenLastApp: false,
     ringtone: DEFAULT_RINGTONE,
-    // The website demo opens on Chime, which carries better than the stock
-    // tone through laptop speakers. In game the default is unchanged.
     notificationTone: isDemo ? 'chime' : DEFAULT_NOTIFICATION,
     customRingtones: [],
     customNotificationTones: [],
@@ -572,7 +571,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         const key = wallpaperKey(value);
         if (isFiveM) {
             cacheWallpapers(get().wallpaperLock, get().wallpaperHome);
-            // Absent fields serialize away, so the server's COALESCE leaves that screen alone.
             void fetchNui('sd-phone:settings:setWallpaper', { lock: lock ? key : undefined, home: home ? key : undefined }).catch(() => {});
         } else {
             if (lock) saveWallpaperLocal(key);
@@ -580,8 +578,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         }
     },
 
-    // Resolves to null on success, or an error message ('' = caller supplies a generic one).
-    // A network failure rejects, which PromptDialog surfaces with its own localized message.
     addCustomWallpaper: async (url) => {
         const list = get().customWallpapers;
         if (list.includes(url)) return null;
@@ -624,17 +620,20 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         else saveAccentLocal(next);
     },
 
-    // Only a shell whose cutout is big enough to hold the whole island pill can carry a pet. On
-    // any other chassis the pill floats below the status bar, where a pet reads as a loose sprite,
-    // so switching to one puts the pet away rather than leaving it somewhere it does not belong.
     setShell: (next) => {
-        if (!isShellId(next)) return;
-        set({ shell: next });
+        if (!isShellPick(next)) return;
+        const shell = shellOf({ ...get(), shellPick: next });
+        set({ shellPick: next, shell });
         if (isFiveM) void fetchNui('sd-phone:settings:setShell', { shell: next }).catch(() => {});
         else saveShellLocal(next);
-        if (get().islandPet !== 'none' && !shellHostsPet(shellFor(next, device.id))) {
+        if (get().islandPet !== 'none' && !shellHostsPet(shellFor(shell, device.id))) {
             get().setIslandPet('none');
         }
+    },
+
+    setPhoneLook: (look, follows) => {
+        const next = { ...get(), phoneLook: look, shellFollowsPhone: follows ?? get().shellFollowsPhone };
+        set({ phoneLook: next.phoneLook, shellFollowsPhone: next.shellFollowsPhone, shell: shellOf(next) });
     },
 
     saveCustomPalette: async (palette) => {
@@ -686,9 +685,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         else saveIslandPetLocal(v);
     },
 
-    // Where the device sits is the one setting that is NOT shared with the phone: the two have
-    // different shapes and want different spots, and phone_settings holds a single value. A
-    // companion device keeps its own position in its own NUI origin's storage instead.
     setPhoneAlign: (v) => {
         set({ phoneAlign: v });
         if (isFiveM && device.id === 'phone') void fetchNui('sd-phone:settings:setPhoneAlign', { align: v }).catch(() => {});
@@ -721,8 +717,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         set({ callVol: v });
         if (isFiveM) {
             persistDebounced('volumes', () => { void fetchNui('sd-phone:settings:setVolumes', { ringtone: get().ringtoneVol, call: get().callVol }).catch(() => {}); });
-            // Live in-call volume must track the drag in real time - never debounced. Only the
-            // device that owns the call may set it; a companion would stomp the phone's call.
             if (device.calls) void fetchNui('sd-phone:call:setVolume', { volume: v }).catch(() => {});
         }
     },
@@ -887,7 +881,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             darkTheme: 'graphite',
             lightTheme: 'silver',
             accent: DEFAULT_ACCENT,
-            shell: DEFAULT_SHELL,
+            shellPick: MATCH_SHELL,
+            shell: shellOf({ ...get(), shellPick: MATCH_SHELL }),
             wallpaperLock: stock,
             wallpaperHome: stock,
             blurLock: false,
@@ -935,9 +930,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     },
 
     resetProfileVisuals: () => {
-        // Profile switch/restore: paint the stock look NOW, so the previous phone's wallpaper
-        // and clock never show on this one while the async hydrate is still in flight. The
-        // setup flag goes back to "unknown" so Hello waits for THIS profile's answer.
         const stock = isFiveM ? lockscreenAsset : (loadWallpaperLocal() ?? devDefaultAsset);
         set({
             wallpaperLock: stock,
@@ -955,8 +947,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     },
 
     applyWallpaperProfile: (key) => {
-        // Selects the acting profile's wallpaper cache and paints its last-known value NOW
-        // (same render batch as the phone reveal). Dev already persists wallpaper locally.
         if (!isFiveM) return;
         wallpaperProfileKey = key;
         const cached = readWallpaperCache();
@@ -969,9 +959,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     },
 
     hydrate: (attempt = 0) => {
-        // In-game only: on first join the character may not be loaded yet, so settings:get returns
-        // no data. Reschedule until it does (or we hit the cap). In dev there is no server, so no
-        // retry - the store already seeded itself from localStorage.
         const retry = () => {
             if (isFiveM && attempt < HYDRATE_MAX_RETRIES) {
                 window.setTimeout(() => get().hydrate(attempt + 1), HYDRATE_RETRY_MS);
@@ -983,9 +970,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 if (!res?.data) { retry(); return; }
                 const d = res.data;
                 const patch: Partial<ThemeState> = {};
-                // Always assigned: a profile that never saved one must PAINT the default, not
-                // keep the previous phone's wallpaper (unique phones swap profiles live). A
-                // profile without a distinct home wallpaper mirrors its lock one.
                 const stockWall = isFiveM ? lockscreenAsset : (loadWallpaperLocal() ?? devDefaultAsset);
                 const lockWall  = (typeof d.wallpaper === 'string' && d.wallpaper) ? wallpaperKey(d.wallpaper) : stockWall;
                 const homeWall  = (typeof d.wallpaperHome === 'string' && d.wallpaperHome) ? wallpaperKey(d.wallpaperHome) : lockWall;
@@ -1008,8 +992,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 patch.streamerHide = normalizeStreamerHide(d.streamerHide);
                 if (typeof d.gameTime === 'boolean') patch.gameTime = d.gameTime;
                 if (typeof d.reopenApp === 'boolean') patch.reopenLastApp = d.reopenApp;
-                // Always assigned (true/false, never left null) - the per-profile answer is
-                // what lets the Hello gate decide, and a stale previous-profile value may not leak.
                 patch.setupDone = d.setupDone === true;
                 if (d.theme === 'light' || d.theme === 'dark') patch.theme = d.theme;
                 if (typeof d.darkTheme === 'string' && (DARK_THEMES as string[]).includes(d.darkTheme)) patch.darkTheme = d.darkTheme as DarkTheme;
@@ -1018,10 +1000,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 if (isCustomPaletteId(d.darkTheme)) patch.darkTheme = d.darkTheme as CustomPaletteId;
                 if (isCustomPaletteId(d.lightTheme)) patch.lightTheme = d.lightTheme as CustomPaletteId;
                 if (isAccentChoice(d.accent)) patch.accent = d.accent;
-                if (isShellId(d.shell)) patch.shell = d.shell;
+                if (isShellPick(d.shell)) patch.shellPick = d.shell;
                 if (typeof d.shellChoice === 'boolean') patch.shellChoice = d.shellChoice;
-                if (Array.isArray(d.shellsAllowed)) patch.shellsAllowed = d.shellsAllowed.filter(isShellId);
-                if (isShellId(d.shell)) patch.shell = d.shell;
+                if (Array.isArray(d.shellsAllowed)) patch.shellsAllowed = d.shellsAllowed.filter(isShellPick).filter(id => id !== MATCH_SHELL);
+                patch.shell = shellOf({ ...get(), ...patch });
                 if (typeof d.chatTextScale === 'number') patch.chatTextScale = clampChatScale(d.chatTextScale);
                 patch.motion = motionFromCode(d.motion);
                 patch.boldText = d.boldText === true;
@@ -1049,8 +1031,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                     ? d.wallpaperParallax
                     : DEFAULT_SHELL_LOOK.wallpaperParallax;
                 if (typeof d.brightness === 'number') patch.brightness = clampPhoneScale(d.brightness);
-                // Position is device-local (see setPhoneAlign): a companion must not adopt the
-                // phone's corner out of the shared settings row.
                 if (device.id === 'phone' && typeof d.phoneAlign === 'string' && (PHONE_ALIGNS as string[]).includes(d.phoneAlign)) patch.phoneAlign = d.phoneAlign as PhoneAlign;
                 if (typeof d.ringtoneVol === 'number') patch.ringtoneVol = clampVol(d.ringtoneVol);
                 if (typeof d.callVol === 'number') patch.callVol = clampVol(d.callVol);
@@ -1066,12 +1046,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 patch.customNotificationTones = notif;
                 set(patch);
                 useIconThemeStore.getState().hydrate(d);
-                // Freshest server answer becomes the profile's cached wallpapers - unless the
-                // acting profile changed while this request was in flight.
                 if (isFiveM && keyAtRequest === wallpaperProfileKey) {
                     cacheWallpapers(lockWall, homeWall);
                 }
-                // Same rule on hydrate: a companion opening would push its volume onto the call.
                 if (isFiveM && device.calls) void fetchNui('sd-phone:call:setVolume', { volume: get().callVol }).catch(() => {});
                 const ringIsYt  = !!d.ringtone         && ring.some(c => c.id === d.ringtone);
                 const notifIsYt = !!d.notificationTone && notif.some(c => c.id === d.notificationTone);
@@ -1092,10 +1069,6 @@ export function ensureCustomTone(kind: ToneKind, name: string, url: string): str
 
 export function useTheme(): ThemeState;
 export function useTheme<K extends keyof ThemeState>(...keys: K[]): Pick<ThemeState, K>;
-// Pick-style subscription: consumers name the fields they render, and only
-// changes to THOSE fields re-render them (shallow compare on the picked
-// object; store actions are stable references so naming them is free). The
-// zero-arg form subscribes to the whole store — avoid it in components.
 export function useTheme(...keys: (keyof ThemeState)[]): unknown {
     return useThemeStore(
         useShallow((s: ThemeState) => {
