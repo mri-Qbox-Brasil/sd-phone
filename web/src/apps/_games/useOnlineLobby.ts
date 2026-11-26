@@ -1,40 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDeckActive } from '@/shell/deckActive';
+import { isHostMessage } from '@/core/messageSource';
 import { t } from '@/i18n';
 import {
-    checkPendingApi, createLobbyApi, declineInviteApi, inviteLobbyApi, joinLobbyApi,
+    checkPendingApi, createLobbyApi, declineInviteApi, finishApi, inviteLobbyApi, joinLobbyApi,
     kickMemberApi, leaveLobbyApi, lobbiesApi, resignApi, returnToLobbyApi,
     setReadyApi, setWagerApi, startLobbyApi,
     type LobbyListItem, type LobbyState, type PendingInvite, type Side,
 } from './onlineApi';
-import { recordResultApi, type GameStats } from './statsApi';
+import type { GameStats } from './statsApi';
 
-interface OnlineGameInfo { gameId: string; opponent: string; pot: number }
-interface OnlineStartData { gameId: string; color: string; opponent: string; pot: number }
+interface OnlineGameInfo { gameId: string; opponent: string; pot: number; side: string; turnSeconds: number; setupSeconds: number; timeLimit: number }
+interface OnlineStartData { gameId: string; color: string; opponent: string; pot: number; turnSeconds?: number; setupSeconds?: number; timeLimit?: number }
+export interface OnlineResult { winner?: string; reason: string; reveal?: unknown }
 
 export interface UseOnlineLobbyOptions {
-    /** A match began: reset local game state, read d.color, and show the game screen. */
     onStart: (d: OnlineStartData) => void;
-    /** An opponent move arrived (the `move` payload of the `<game>:move` event). */
     onMove?: (move: unknown) => void;
-    /** A turn-neutral relay arrived (the `data` payload of the `<game>:relay` event). */
-    onRelay?: (data: unknown) => void;
-    /** Both sides finished setup: the match is live and `turn` says who moves first. */
     onBegin?: (d: { turn: string; you: string }) => void;
-    /** The opponent finished their setup; we may still be placing. */
     onOppReady?: () => void;
-    /** The opponent resigned or left mid-match. */
-    onEnded: (reason: string) => void;
-    /** Return-to-lobby succeeded: clear match state and show the lobby screen. */
+    onResult?: (r: OnlineResult) => void;
+    onDrawOffer?: () => void;
+    onEnded: (reason: string, reveal?: unknown) => void;
     onReset?: () => void;
-    /** Navigate back to the game's home screen (hook state is already cleared). */
     onHome: () => void;
-    /** Fresh stats after the hook records a forfeit loss. */
     onStats?: (stats: GameStats) => void;
-    /** True while the Play Online screen (hub or room) is visible; gates the poll and kick timer. */
     inLobbyScreen: boolean;
-    /** True once the current match has finished; suppresses forfeit on leave/unmount. */
     matchOver: boolean;
 }
 
@@ -61,13 +53,12 @@ export interface OnlineLobby {
     goHome: () => void;
 }
 
-// useNuiEvent types its action against the NuiMessage union; lobby event names are
-// built from the game id at runtime, so subscribe with an equivalent raw listener.
-function useGameEvent<T>(action: string, handler: (data: T) => void): void {
+export function useGameEvent<T>(action: string, handler: (data: T) => void): void {
     const handlerRef = useRef(handler);
     handlerRef.current = handler;
     useEffect(() => {
         function listener(event: MessageEvent) {
+            if (!isHostMessage(event)) return;
             const msg = event.data as { action?: string; data?: unknown } | undefined;
             if (!msg || msg.action !== action) return;
             handlerRef.current(msg.data as T);
@@ -78,10 +69,6 @@ function useGameEvent<T>(action: string, handler: (data: T) => void): void {
 }
 
 export function useOnlineLobby(game: string, options: UseOnlineLobbyOptions): OnlineLobby {
-    // While this game is backgrounded, quiet the hub list poll and the kick timer.
-    // A LIVE match stays mounted and keeps its :move/:ended listeners, so the frozen
-    // card always shows the true current board; only the browsing-the-hub refresh and
-    // the missing-member countdown pause, and both re-arm instantly on foreground.
     const active = useDeckActive();
     const [lobby,       setLobby]       = useState<LobbyState | null>(null);
     const [lobbies,     setLobbies]     = useState<LobbyListItem[]>([]);
@@ -100,22 +87,29 @@ export function useOnlineLobby(game: string, options: UseOnlineLobbyOptions): On
     inProgressRef.current = !!onlineGame && !options.matchOver;
 
     useGameEvent<OnlineStartData>(`${game}:start`, d => {
-        setOnlineGame({ gameId: d.gameId, opponent: d.opponent, pot: d.pot || 0 });
+        setOnlineGame({ gameId: d.gameId, opponent: d.opponent, pot: d.pot || 0, side: d.color, turnSeconds: d.turnSeconds || 0, setupSeconds: d.setupSeconds || 0, timeLimit: d.timeLimit || 0 });
         setLobby(null); setInviteError(null); setIncoming(null); setLobbyGone(false);
         opts.current.onStart(d);
     });
     useGameEvent<{ move?: unknown }>(`${game}:move`, d => {
         if (d?.move != null) opts.current.onMove?.(d.move);
     });
-    useGameEvent<{ data?: unknown }>(`${game}:relay`, d => {
-        if (d?.data != null) opts.current.onRelay?.(d.data);
-    });
     useGameEvent<{ turn?: string; you?: string }>(`${game}:begin`, d => {
         if (d?.turn && d?.you) opts.current.onBegin?.({ turn: d.turn, you: d.you });
     });
     useGameEvent<unknown>(`${game}:oppReady`, () => { opts.current.onOppReady?.(); });
-    useGameEvent<{ reason?: string }>(`${game}:ended`, d => {
-        opts.current.onEnded(d?.reason || 'left');
+    useGameEvent<{ gameId?: string; winner?: string; reason?: string; reveal?: unknown; stats?: GameStats }>(`${game}:result`, d => {
+        if (d?.stats) opts.current.onStats?.(d.stats);
+        opts.current.onResult?.({ winner: d?.winner, reason: d?.reason || 'win', reveal: d?.reveal });
+        if (d?.gameId) finishApi(d.gameId);
+    });
+    useGameEvent<{ stats?: GameStats }>(`${game}:stats`, d => {
+        if (d?.stats) opts.current.onStats?.(d.stats);
+    });
+    useGameEvent<unknown>(`${game}:drawOffer`, () => { opts.current.onDrawOffer?.(); });
+    useGameEvent<{ reason?: string; reveal?: unknown; stats?: GameStats }>(`${game}:ended`, d => {
+        if (d?.stats) opts.current.onStats?.(d.stats);
+        opts.current.onEnded(d?.reason || 'left', d?.reveal);
     });
     useGameEvent<{ fromName: string; lobbyId: string }>(`${game}:invited`, d => {
         setIncoming({ fromName: d.fromName, lobbyId: d.lobbyId });
@@ -128,8 +122,8 @@ export function useOnlineLobby(game: string, options: UseOnlineLobbyOptions): On
     const inHub = options.inLobbyScreen && !lobby && active;
     useEffect(() => {
         if (!inHub) return;
-        void lobbiesApi(game).then(setLobbies);
-        const timer = setInterval(() => { void lobbiesApi(game).then(setLobbies); }, 3000);
+        void lobbiesApi(game).then(setLobbies).catch(() => {});
+        const timer = setInterval(() => { void lobbiesApi(game).then(setLobbies).catch(() => {}); }, 3000);
         return () => clearInterval(timer);
     }, [inHub, game]);
 
@@ -138,8 +132,7 @@ export function useOnlineLobby(game: string, options: UseOnlineLobbyOptions): On
         if (!og || !inProgressRef.current) return;
         resignApi(og.gameId);
         inProgressRef.current = false;
-        void recordResultApi(game, 'online', 'loss').then(s => { if (s) opts.current.onStats?.(s); });
-    }, [game]);
+    }, []);
 
     const goHome = useCallback(() => {
         forfeitIfLive();
@@ -167,9 +160,8 @@ export function useOnlineLobby(game: string, options: UseOnlineLobbyOptions): On
 
     useEffect(() => () => {
         if (onlineRef.current) resignApi(onlineRef.current.gameId);
-        if (inProgressRef.current) void recordResultApi(game, 'online', 'loss');
         if (onlineRef.current || lobbyRef.current) leaveLobbyApi();
-    }, [game]);
+    }, []);
 
     const create = useCallback((isPublic: boolean, side: Side, wager: number) => {
         setHubError(null);
@@ -224,11 +216,14 @@ export function useOnlineLobby(game: string, options: UseOnlineLobbyOptions): On
     }, []);
 
     const ready = useCallback((r: boolean) => {
+        setInviteError(null);
         setLobby(lb => (lb ? { ...lb, members: lb.members.map(m => (m.you ? { ...m, ready: r } : m)) } : lb));
-        setReadyApi(r);
+        void setReadyApi(r, lobbyRef.current?.wager ?? 0).then(res => {
+            if (!res.ok) setInviteError(res.message || t('games.couldNotReady', 'Could not ready up'));
+        });
     }, []);
 
-    const refresh = useCallback(() => { void lobbiesApi(game).then(setLobbies); }, [game]);
+    const refresh = useCallback(() => { void lobbiesApi(game).then(setLobbies).catch(() => {}); }, [game]);
 
     const returnToLobby = useCallback(() => {
         void returnToLobbyApi(game).then(r => {

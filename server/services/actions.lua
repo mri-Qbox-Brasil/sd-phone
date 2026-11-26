@@ -241,31 +241,36 @@ local rosterAt = {}
 ---@type table<string, boolean> Jobs with a trailing roster push already scheduled.
 local rosterQueued = {}
 
----@type integer How long the on-duty map is reused, in ms. It walks every connected player, so
----each directory read rebuilding it cost one framework lookup per player.
-local DUTY_TTL = 5000
----@type { map: table<string, boolean>|nil, at: number } Memo of the last on-duty map.
-local dutyMemo = { map = nil, at = 0 }
-
----Every job with at least one player on duty. Built once per directory read: asking per company
----would walk all online players again for each one. Reused for DUTY_TTL; a duty flip shows up in
----the public list within that window.
+---Every configured company with at least one player on duty, read from the bridge's job index so a
+---directory read costs no framework lookup at all.
 ---@return table<string, boolean> jobName -> true
 local function onDutyJobs()
-    local now = GetGameTimer()
-    if dutyMemo.map and now - dutyMemo.at >= 0 and now - dutyMemo.at < DUTY_TTL then return dutyMemo.map end
     local out = {}
-    for _, tsrc in pairs(player.onlineCidMap()) do
-        local st = job.getState(tsrc)
-        if st and st.duty == true and st.name then out[st.name] = true end
+    for _, c in ipairs(COMPANIES) do
+        for _, tsrc in ipairs(job.sourcesOf(c.job)) do
+            local hit = job.indexed(tsrc)
+            if hit and hit.duty == true then out[c.job] = true break end
+        end
     end
-    dutyMemo = { map = out, at = now }
     return out
+end
+
+---Whether an employee counts as on duty for a company: the framework's duty where it has one, the
+---phone's own Duty toggle where it does not (ESX, ND).
+---@param tsrc integer employee server id
+---@param prefs table their prefs for the job (store.getPrefs)
+---@return boolean
+local function staffOnDuty(tsrc, prefs)
+    local hit = job.indexed(tsrc)
+    local onDuty = hit and hit.duty
+    if onDuty == nil then onDuty = prefs.duty end
+    return onDuty == true
 end
 
 ---Tells every online boss of a job to refresh their roster; the push carries no data. Throttled
 ---per job: a burst of hires or duty flips coalesces into one leading push plus one trailing one,
----so every boss still ends on a current roster.
+---so every boss still ends on a current roster. Only the job's own members are asked whether they
+---are a boss, from the bridge's job index.
 ---@param jobName string|nil
 function actions.notifyRoster(jobName)
     if not jobName or BLACKLIST[jobName] then return end
@@ -283,9 +288,8 @@ function actions.notifyRoster(jobName)
     rosterAt[jobName] = now
 
     local esxBoss = esxBossGrade(jobName)
-    for _, tsrc in pairs(player.onlineCidMap()) do
-        local st = job.getState(tsrc)
-        if st and st.name == jobName and job.isBoss(tsrc, jobName, esxBoss) then
+    for _, tsrc in ipairs(job.sourcesOf(jobName)) do
+        if job.isBoss(tsrc, jobName, esxBoss) then
             TriggerClientEvent('sd-phone:client:services:rosterChanged', tsrc, {})
         end
     end
@@ -582,7 +586,7 @@ function actions.promote(src, payload)
         if not job.set(info.src, myJob, nextGrade) then return fail('services.couldNotUpdateTheirGrade', 'Could not update their grade') end
         jobstore.addSaved(targetCid, myJob, nextGrade)
     elseif info.saved then
-        jobstore.addSaved(targetCid, myJob, nextGrade)
+        jobstore.addSaved(targetCid, myJob, nextGrade, true)
     else
         return fail('services.playerMustOnlinePromoted', 'That player must be online to be promoted')
     end
@@ -630,7 +634,7 @@ function actions.demote(src, payload)
         if not job.set(info.src, myJob, prevGrade) then return fail('services.couldNotUpdateTheirGrade', 'Could not update their grade') end
         jobstore.addSaved(targetCid, myJob, prevGrade)
     elseif info.saved then
-        jobstore.addSaved(targetCid, myJob, prevGrade)
+        jobstore.addSaved(targetCid, myJob, prevGrade, true)
     else
         return fail('services.playerMustOnlineDemoted', 'That player must be online to be demoted')
     end
@@ -696,12 +700,11 @@ function actions.callCompany(src, payload)
 
     local targets   = {}
     local anyOnDuty = false
-    for cid, tsrc in pairs(player.onlineCidMap()) do
-        if tsrc ~= src and job.getName(tsrc) == entry.job then
-            local prefs   = store.getPrefs(cid, entry.job)
-            local onDuty  = job.getDuty(tsrc)
-            if onDuty == nil then onDuty = prefs.duty end
-            if onDuty then
+    for _, tsrc in ipairs(job.sourcesOf(entry.job)) do
+        local cid = tsrc ~= src and player.getIdentifier(tsrc)
+        if cid then
+            local prefs = store.getPrefs(cid, entry.job)
+            if staffOnDuty(tsrc, prefs) then
                 anyOnDuty = true
                 if prefs.jobCalls then
                     targets[#targets + 1] = { src = tsrc, cid = cid }
@@ -859,25 +862,23 @@ function actions.markThreadRead(src, payload)
 end
 
 ---Notifies and live-refreshes every online, on-duty employee of a job about a customer message;
----the banner is opt-in (Job Messages toggle) and quiet inside the Services app.
+---the banner is opt-in (Job Messages toggle) and quiet inside the Services app. Walks the job's
+---members from the bridge's job index, never every connected player.
 ---@param jobName string
 ---@param title string
 ---@param body string
 local function notifyStaff(jobName, title, body)
-    for ecid, esrc in pairs(player.onlineCidMap()) do
-        if job.getName(esrc) == jobName then
-            local prefs  = store.getPrefs(ecid, jobName)
-            local onDuty = job.getDuty(esrc)
-            if onDuty == nil then onDuty = prefs.duty end
-            if onDuty then
-                if prefs.jobMessages then
-                    TriggerClientEvent('sd-phone:client:notify', esrc, {
-                        app = 'services', appId = 'services', title = title, body = body, time = 'now',
-                        quietInApp = true,
-                    })
-                end
-                TriggerClientEvent('sd-phone:client:services:inbox', esrc, {})
+    for _, esrc in ipairs(job.sourcesOf(jobName)) do
+        local ecid  = player.getIdentifier(esrc)
+        local prefs = ecid and store.getPrefs(ecid, jobName)
+        if prefs and staffOnDuty(esrc, prefs) then
+            if prefs.jobMessages then
+                TriggerClientEvent('sd-phone:client:notify', esrc, {
+                    app = 'services', appId = 'services', title = title, body = body, time = 'now',
+                    quietInApp = true,
+                })
             end
+            TriggerClientEvent('sd-phone:client:services:inbox', esrc, {})
         end
     end
 end
@@ -972,8 +973,13 @@ end
 ---@type table<number, string> Cached citizenid per connected src (set on load, cleared on drop).
 local srcToCid = {}
 
----Applies phone-managed job changes from while the player was offline: consumes a pending fire,
----syncs the active job's grade to the saved grade, or seeds a missing saved entry; caches src -> cid.
+---Applies phone-managed job changes from while the player was offline: consumes a pending fire, or
+---pushes a grade a boss set from the phone (a saved entry marked pending). In every other case the
+---framework is the authority and the saved entry is seeded or refreshed from it: a grade changed
+---outside the phone (an admin command, a boss menu, another resource) must survive the relog, not
+---be reset to whatever the phone last saw. Where saved jobs exist, the list is then synced against
+---the framework (jobstore.syncHeld), so a job taken away while the player was offline is dropped
+---before they can switch back into it. Caches src -> cid.
 ---@param src number
 function actions.reconcileJobs(src)
     local cid = player.getRealIdentifier(src)
@@ -981,22 +987,25 @@ function actions.reconcileJobs(src)
     srcToCid[src] = cid
 
     local activeJob = job.getName(src)
-    if not activeJob or activeJob == '' or BLACKLIST[activeJob] then return end
+    if activeJob and activeJob ~= '' and not BLACKLIST[activeJob] then
+        if jobstore.takePendingFire(cid, activeJob) then
+            job.set(src, UNEMPLOYED, 0)
+        else
+            local saved      = jobstore.getSaved(cid)[activeJob]
+            local liveGrade  = job.getGrade(src) or 0
+            local savedGrade = saved and math.floor(tonumber(saved.grade) or 0) or nil
 
-    if jobstore.takePendingFire(cid, activeJob) then
-        job.set(src, UNEMPLOYED, 0)
-        return
-    end
-
-    local saved = jobstore.getSaved(cid)[activeJob]
-    if saved then
-        local savedGrade = math.floor(tonumber(saved.grade) or 0)
-        if savedGrade ~= (job.getGrade(src) or 0) then
-            job.set(src, activeJob, savedGrade)
+            if saved and saved.pending then
+                if savedGrade ~= liveGrade then job.set(src, activeJob, savedGrade) end
+                jobstore.addSaved(cid, activeJob, savedGrade)
+            elseif savedGrade ~= liveGrade then
+                jobstore.addSaved(cid, activeJob, liveGrade)
+            end
         end
-    else
-        jobstore.addSaved(cid, activeJob, job.getGrade(src) or 0)
     end
+
+    local held = job.supportsMultijob() and job.getAll(src)
+    if held then jobstore.syncHeld(cid, held, BLACKLIST) end
 end
 
 ---Refreshes the rosters of every company a disconnecting player belonged to, using the cached

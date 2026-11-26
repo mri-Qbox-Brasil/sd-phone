@@ -14,6 +14,7 @@ import { fetchNui, isFiveM } from '@/core/nui';
 import { apiCall } from '@/core/api';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
+import { useAsyncData } from '@/hooks/useAsyncData';
 import { mapsConfig } from './config';
 import { MapView, usePinStyle } from './MapView';
 import { LiveDot, useSelfLocation } from './LiveDot';
@@ -57,12 +58,11 @@ export function Maps({ onClose }: { onClose: () => void }) {
     const [selectedCompany, setSelectedCompany] = useSessionState<string | null>('maps:selectedCompany', null);
     const mapRef = useRef<MapViewHandle>(null);
 
-    const [companies, setCompanies] = useState<Company[]>([]);
-    useEffect(() => {
-        let alive = true;
-        void fetchDirectory().then(d => { if (alive) setCompanies((d.companies ?? []).filter(c => c.coords)); });
-        return () => { alive = false; };
-    }, []);
+    const { data: companyData } = useAsyncData(
+        () => fetchDirectory().then(d => (d.companies ?? []).filter(c => c.coords)),
+        [],
+    );
+    const companies = companyData ?? [];
 
     const [sheetTab, setSheetTab] = useSessionState<'pins' | 'people' | 'companies'>('maps:sheetTab', 'pins');
     const markersRef = useRef(markers);
@@ -124,9 +124,6 @@ export function Maps({ onClose }: { onClose: () => void }) {
         return () => { alive = false; };
     }, [withTarget]);
 
-    // Shared with the ryde consumers: useSelfLocation refcounts the native stream and gates it on
-    // useDeckActive. Maps used to duplicate this inline without either, so a backgrounded Maps kept
-    // the stream running, and its ungated on/off fought the refcount other consumers rely on.
     const me = useSelfLocation();
 
     useNuiEvent('sd-phone:maps:pinAdded', useCallback((m) => {
@@ -168,7 +165,7 @@ export function Maps({ onClose }: { onClose: () => void }) {
     function toggleAvatars() {
         setShowAvatars(v => {
             const next = !v;
-            try { window.localStorage.setItem('sd-phone:friends:avatars', next ? '1' : '0'); } catch { /* ignore */ }
+            try { window.localStorage.setItem('sd-phone:friends:avatars', next ? '1' : '0'); } catch {}
             return next;
         });
     }
@@ -442,7 +439,6 @@ export function Maps({ onClose }: { onClose: () => void }) {
                         <span className="text-[15px] text-ios-gray">{companies.length}</span>
                     ) : (
                         <div className="flex items-center gap-3">
-                            {/* Hidden when no friend has a photo - the toggle would visibly do nothing. */}
                             {friends.some(f => f.avatar) && (
                                 <button
                                     onClick={toggleAvatars}

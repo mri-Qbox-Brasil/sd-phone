@@ -4,6 +4,8 @@ local config   = require 'configs.config'
 local player   = require 'bridge.server.player'
 ---@type table Settings persistence layer (server.settings.store): phone_settings row CRUD.
 local settings = require 'server.settings.store'
+local simState = require 'server.sim.state'
+local simSession = require 'server.sim.session'
 
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
@@ -62,6 +64,28 @@ local function sanitize(ids)
     return out
 end
 
+---A character's installed app ids and home-screen layout from ONE read of their phone_settings
+---row. Both live on that row and the phone asks for them together on every open; decoded exactly
+---as settings.getInstalledApps and settings.getHomeLayout decode them one at a time.
+---@param cid string framework per-character id
+---@return string[] installed stored app ids, unsanitised (empty when none or malformed)
+---@return string|nil layout opaque layout JSON, nil when never saved
+local function homeScreen(cid)
+    local row = MySQL.single.await(
+        'SELECT installed_apps, home_layout FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { cid, 'phone' }
+    )
+    if not row then return {}, nil end
+    local installed = {}
+    if type(row.installed_apps) == 'string' and row.installed_apps ~= '' then
+        local decoded, ids = pcall(json.decode, row.installed_apps)
+        if decoded and type(ids) == 'table' then installed = ids end
+    end
+    local layout = row.home_layout
+    if layout == '' then layout = nil end
+    return installed, layout
+end
+
 ---The caller's installed downloadable apps + saved home-screen layout, scoped to the citizenid
 ---resolved from src. Read-only.
 ---@param source number player server id
@@ -69,9 +93,11 @@ end
 function actions.list(source)
     local cid = player.getIdentifier(source)
     if not cid then return fail('apps.playerNotFound', 'Player not found') end
+    local installed, layout = homeScreen(cid)
     return ok({
-        installed = sanitize(settings.getInstalledApps(cid)),
-        layout    = settings.getHomeLayout(cid),
+        profile   = cid,
+        installed = sanitize(installed),
+        layout    = layout,
     })
 end
 
@@ -84,6 +110,15 @@ function actions.install(source, payload)
     if type(payload) ~= 'table' then payload = {} end
     local cid = player.getIdentifier(source)
     if not cid then return fail('apps.playerNotFound', 'Player not found') end
+    if payload.profile ~= nil and payload.profile ~= cid then
+        -- An install that started on a phone may finish after another carried phone becomes
+        -- active. Only device mode permits targeting that still-carried device identity.
+        if not simState.device or type(payload.profile) ~= 'string'
+            or not simSession.hasIdentity(source, payload.profile) then
+            return fail('apps.phoneChanged', 'You switched to another phone.')
+        end
+        cid = payload.profile
+    end
 
     local id = payload.id
     if type(id) ~= 'string' or not DOWNLOADABLE[id] then
@@ -101,7 +136,7 @@ function actions.install(source, payload)
     end
     installed[#installed + 1] = id
     settings.setInstalledApps(cid, installed)
-    return ok({ installed = installed })
+    return ok({ installed = installed, profile = cid })
 end
 
 ---Uninstalls one app for the caller; the id is an equality filter over the already-sanitized
@@ -113,6 +148,9 @@ function actions.uninstall(source, payload)
     if type(payload) ~= 'table' then payload = {} end
     local cid = player.getIdentifier(source)
     if not cid then return fail('apps.playerNotFound', 'Player not found') end
+    if payload.profile ~= nil and payload.profile ~= cid then
+        return fail('apps.phoneChanged', 'You switched to another phone.')
+    end
 
     local id = payload.id
     if type(id) ~= 'string' or not DOWNLOADABLE[id] then
@@ -176,6 +214,9 @@ function actions.saveLayout(source, payload)
     if type(payload) ~= 'table' then payload = {} end
     local cid = player.getIdentifier(source)
     if not cid then return fail('apps.playerNotFound', 'Player not found') end
+    if payload.profile ~= nil and payload.profile ~= cid then
+        return fail('apps.phoneChanged', 'You switched to another phone.')
+    end
 
     -- The home screen already debounces a rearrange into one save every 500ms, so this only ever
     -- bites a script: a 16KB TEXT column rewrite is the most expensive write the phone can ask for.

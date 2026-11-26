@@ -75,6 +75,8 @@ local cameraOn = false
 local landscape = false
 ---@type string Current frame colour; drives which prop model is welded.
 local color = config.Phone.DefaultColor or 'black'
+---@type table Cases (client.cases): the case this player wears, and the parts that dress a prop in one.
+local cases = require 'client.cases'
 ---@type integer|nil Handle of the attached phone prop, nil while stowed.
 local prop
 ---@type integer Bumped by every weld and every removal. Welding streams the model, which yields,
@@ -105,6 +107,11 @@ function pose.shouldHold()
     return phoneOpen or torchOn or inCall
 end
 
+---@type table<string, { dict: string, anim: string }> Every clip a pose.clipOverride has handed out, by
+---"dict/anim". They are not in CLIPS, and the override is cleared before the pose is stopped, so pose.stop
+---could not find the one still playing and the ped kept holding a phone that was gone.
+local overrideClips = {}
+
 ---The clip that should be held right now. Every caller reads the pose through this, so adding a
 ---clip can never leave the watchdog hunting for one the player was never given.
 ---
@@ -113,6 +120,11 @@ end
 ---the point of asking.
 ---@return { dict: string, anim: string, blendIn: number, blendOut: number, flags: integer }
 local function currentClip()
+    -- Prop screen (configs/phone.lua PropScreen): one reading pose for the whole session.
+    if pose.clipOverride then
+        overrideClips[pose.clipOverride.dict .. '/' .. pose.clipOverride.anim] = pose.clipOverride
+        return pose.clipOverride
+    end
     -- One camera pose covers both lenses: the native cell cam swapped pose on flip, but no
     -- outward-facing clip outside that native is verified to exist. Landscape is the exception:
     -- it turns the phone on its side, so it gets its own clip. Not while the selfie lens is up,
@@ -146,13 +158,17 @@ local PLAIN_SHUT <const> = config.Phone.FoldPlainShutProp == true
 local PLAIN_OPEN <const> = config.Phone.FoldPlainOpenProp == true
 ---@type boolean Whether the body in hand is currently unfolded. Only ever true on a foldable.
 local foldOpen = false
+---@type boolean Whether the phone this player is using is a foldable: its item says so
+---(configs/phone.lua Items, `fold`), and the server passes that on when the phone is opened.
+local hinged = false
 
 ---Whether the model welded for this body state is one of the fold models, which is what decides
 ---both the model name and whether the fold grip offsets apply.
 ---@param open boolean|nil true for the unfolded body
+---@param fold boolean|nil whether the phone is a foldable at all
 ---@return boolean
-local function usesFoldModel(open)
-    if not FOLDABLE then return false end
+local function usesFoldModel(open, fold)
+    if not FOLDABLE or not fold then return false end
     if open then return not PLAIN_OPEN end
     return not PLAIN_SHUT
 end
@@ -169,14 +185,38 @@ end
 
 ---The models to weld for a body state, best first: the fold model when this body uses one, then the
 ---plain phone. A server that has not installed the fold props streams only the plain ones, and the
----phone in hand falls back to them instead of vanishing.
+---phone in hand falls back to them instead of vanishing. A phone whose owner picked a design or a
+---logo (configs/phone.lua Looks) puts that set's models first, named from its stem, and keeps the
+---server's own as the fallback. With the prop screen on (configs/phone.lua PropScreen) the
+---DUI-screen model replaces whatever the body state would weld, in the frame colour when the pack
+---streams one (<Model>_<colour>).
 ---@param frame string frame colour; must be a key of FRAME_COLORS
 ---@param open boolean|nil true for the unfolded body
----@return { name: string, fold: boolean }[] candidates
-local function propCandidates(frame, open)
-    local plain = { name = config.Phone.PropPrefix .. frame, fold = false }
-    if not usesFoldModel(open) then return { plain } end
-    return { { name = foldModel(frame, open), fold = true }, plain }
+---@param stem string|nil the stem of the picked set's model names (client.cases stem); nil for none
+---@param look string|nil the design that set is, handed back on its candidates
+---@param isFold boolean|nil whether the phone is a foldable
+---@return { name: string, fold: boolean, look: string? }[] candidates
+local function propCandidates(frame, open, stem, look, isFold)
+    local out = {}
+    if pose.modelOverride then
+        if stem then
+            out[#out + 1] = { name = ('%s_dui_%s'):format(stem, frame), fold = false, look = look }
+            out[#out + 1] = { name = stem .. '_dui', fold = false, look = look }
+        end
+        out[#out + 1] = { name = ('%s_%s'):format(pose.modelOverride, frame), fold = false }
+        out[#out + 1] = { name = pose.modelOverride, fold = false }
+        return out
+    end
+    local fold = usesFoldModel(open, isFold)
+    if stem then
+        if fold then
+            out[#out + 1] = { name = ('%s_fold_%s%s'):format(stem, frame, open and (config.Phone.FoldOpenSuffix or '_open') or ''), fold = true, look = look }
+        end
+        out[#out + 1] = { name = ('%s_%s'):format(stem, frame), fold = false, look = look }
+    end
+    if fold then out[#out + 1] = { name = foldModel(frame, open), fold = true } end
+    out[#out + 1] = { name = config.Phone.PropPrefix .. frame, fold = false }
+    return out
 end
 
 ---Whether folding or unfolding changes the prop in hand at all. False when both body states resolve
@@ -185,7 +225,7 @@ end
 ---@return boolean
 function pose.foldChangesProp()
     for _, open in ipairs({ true, false }) do
-        if usesFoldModel(open) and not unavailableModels[joaat(foldModel(color, open))] then return true end
+        if usesFoldModel(open, hinged) and not unavailableModels[joaat(foldModel(color, open))] then return true end
     end
     return false
 end
@@ -216,6 +256,9 @@ local function propTransform(wide, open, fold)
         local shift = open and config.Phone.FoldOpenPropOffset or config.Phone.FoldPropOffset
         if shift then off = off + shift end
     end
+    if pose.handShift then
+        off, rot = off + pose.handShift.offset, rot + pose.handShift.rot
+    end
     return off, rot
 end
 
@@ -231,9 +274,12 @@ end
 ---@param frame string frame colour; must be a key of FRAME_COLORS
 ---@param wide boolean|nil weld it in the landscape grip
 ---@param open boolean|nil weld the unfolded body instead of the shut one
+---@param case CaseDesign|nil a case to dress the prop in (client.cases)
+---@param style PhoneStyle|nil the phone's design and trims (client.cases)
+---@param fold boolean|nil whether the phone is a foldable
 ---@return integer? prop the welded prop entity, or nil if no candidate model would stream
-function pose.createProp(ped, frame, wide, open)
-    for _, candidate in ipairs(propCandidates(frame, open)) do
+function pose.createProp(ped, frame, wide, open, case, style, fold)
+    for _, candidate in ipairs(propCandidates(frame, open, cases.stem(style), style and style.look, fold)) do
         local model = joaat(candidate.name)
         if not unavailableModels[model] then
             if pcall(lib.requestModel, model, 1000) then
@@ -244,6 +290,7 @@ function pose.createProp(ped, frame, wide, open)
                 AttachEntityToEntity(obj, ped, GetPedBoneIndex(ped, config.Phone.PropBone),
                     off.x, off.y, off.z, rot.x, rot.y, rot.z, false, false, false, false, 2, true)
                 SetModelAsNoLongerNeeded(model)
+                cases.dress(obj, candidate.fold and (open and 'open' or 'shut') or 'plain', case, style, candidate.look)
                 return obj
             end
             SetModelAsNoLongerNeeded(model)
@@ -258,6 +305,51 @@ function pose.createProp(ped, frame, wide, open)
     return nil
 end
 
+---The body this player's phone is when shut: the hinged one for a foldable that keeps its own shut
+---model, the plain one otherwise.
+---@return string body 'shut' or 'plain'
+function pose.shutBody()
+    return usesFoldModel(false, hinged) and 'shut' or 'plain'
+end
+
+---Whether the phone this player is using is a foldable.
+---@return boolean
+function pose.hinged()
+    return hinged
+end
+
+---The design of the phone this player is using.
+---@return string look
+function pose.look()
+    return (cases.style() or {}).look or 'classic'
+end
+
+---Stands a phone on its own in the world, held by nothing: the model a player's phone would be in
+---the hand, shut when it folds, dressed the same way. A case store shows this one.
+---@param coords vector3 where its centre goes
+---@param frame string frame colour suffix
+---@param case CaseDesign|nil a case to dress it in (client.cases)
+---@param style PhoneStyle|nil the phone's design and trims (client.cases)
+---@param fold boolean|nil whether that phone is a foldable
+---@return integer? prop the created object, or nil if no candidate model would stream
+---@return string? body 'plain' or 'shut', for dressing it again
+---@return string? look the design of the model that was created
+function pose.createLoose(coords, frame, case, style, fold)
+    for _, candidate in ipairs(propCandidates(frame, false, cases.stem(style), style and style.look, fold)) do
+        local model = joaat(candidate.name)
+        if not unavailableModels[model] and pcall(lib.requestModel, model, 1500) then
+            local obj = CreateObjectNoOffset(model, coords.x, coords.y, coords.z, false, true, true)
+            SetEntityCollision(obj, false, false)
+            FreezeEntityPosition(obj, true)
+            SetModelAsNoLongerNeeded(model)
+            local body = candidate.fold and 'shut' or 'plain'
+            cases.dress(obj, body, case, style, candidate.look)
+            return obj, body, candidate.look
+        end
+    end
+    return nil
+end
+
 ---Attaches our own hand prop in the current frame colour and grip. No-op if one is already
 ---attached, and a weld superseded or stowed while streaming deletes what it built.
 ---@param ped integer player ped handle
@@ -266,11 +358,11 @@ local function attachProp(ped)
 
     weldSeq = weldSeq + 1
     local seq = weldSeq
-    local obj = pose.createProp(ped, color, landscape, foldOpen)
+    local obj = pose.createProp(ped, color, landscape, foldOpen, cases.worn(color), cases.style(), hinged)
     if not obj then return end
 
     if seq ~= weldSeq or not pose.shouldHold() or (prop and DoesEntityExist(prop)) then
-        DeleteObject(obj)
+        pose.deleteProp(obj)
         return
     end
     prop = obj
@@ -299,13 +391,33 @@ function pose.mirrorOnto(ped)
         RemoveAnimDict(clip.dict)
     end
 
-    return pose.createProp(ped, color, landscape)
+    return pose.createProp(ped, color, landscape, nil, cases.worn(color), cases.style(), hinged)
+end
+
+---The welded hand prop (nil while stowed or still streaming). Used by the prop screen.
+---@return integer|nil
+function pose.getProp()
+    if prop and DoesEntityExist(prop) then return prop end
+    return nil
+end
+
+---Deletes a prop that pose.createProp made, together with the case it was dressed in.
+---@param obj integer the prop entity
+function pose.deleteProp(obj)
+    cases.undress(obj)
+    if DoesEntityExist(obj) then DeleteObject(obj) end
+end
+
+---The frame colour of the phone in hand.
+---@return string
+function pose.frame()
+    return color
 end
 
 ---Delete the attached phone prop, if any. Idempotent, and cancels any weld still streaming.
 function pose.removeProp()
     weldSeq = weldSeq + 1
-    if prop and DoesEntityExist(prop) then DeleteObject(prop) end
+    if prop then pose.deleteProp(prop) end
     prop = nil
 end
 
@@ -338,7 +450,7 @@ local function play()
 end
 
 ---Stops whichever of our clips is playing and removes the prop. Every clip is checked because
----entering the viewfinder or a vehicle swaps which one is up.
+---entering the viewfinder or a vehicle swaps which one is up, the prop screen's own hold included.
 function pose.stop()
     local ped = cache.ped
     for _, contexts in pairs(CLIPS) do
@@ -348,11 +460,16 @@ function pose.stop()
             end
         end
     end
+    for _, clip in pairs(overrideClips) do
+        if IsEntityPlayingAnim(ped, clip.dict, clip.anim, 3) then
+            StopAnimTask(ped, clip.dict, clip.anim, 1.0)
+        end
+    end
     pose.removeProp()
 end
 
 ---Mirrors the phone's state, then starts or stops the pose to match it.
----@param state { open: boolean, torch: boolean, camera: boolean, color: string, typing: boolean, call: boolean, callUi: boolean }
+---@param state { open: boolean, torch: boolean, camera: boolean, color: string, fold: boolean?, typing: boolean, call: boolean, callUi: boolean }
 function pose.refresh(state)
     phoneOpen = state.open and true or false
     torchOn   = state.torch and true or false
@@ -360,6 +477,8 @@ function pose.refresh(state)
     inCall    = state.call and true or false
     callUi    = state.callUi ~= false
     color     = state.color or color
+    if state.fold ~= nil then hinged = state.fold == true end
+    if not hinged then foldOpen = false end
     if state.typing ~= nil then typing = state.typing and true or false end
     if not phoneOpen then typing = false end
     if pose.shouldHold() then play() else pose.stop() end
@@ -377,7 +496,7 @@ end
 ---hold the plain model the prop in hand is already right, so nothing is torn down and rebuilt.
 ---@param open any truthy to hold the unfolded body
 function pose.setFolded(open)
-    open = open and true or false
+    open = (open and hinged) and true or false
     if not FOLDABLE or foldOpen == open then return end
     foldOpen = open
     if pose.foldChangesProp() then pose.reweld() end

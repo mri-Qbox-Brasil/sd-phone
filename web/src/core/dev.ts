@@ -4,15 +4,12 @@ import { device } from '@device';
 import { useFoldStore } from '@/stores/foldStore';
 
 
+/** Dev switches on the URL: ?loc=de, ?ltr=1, ?frame=<colour> (FRAME_COLORS), ?look=slate (the phone
+ *  in hand), ?follow=0 (FollowPhone off), ?fold=open (start unfolded). */
 export function devInjectMockData(): () => void {
-    // In game the hinge is announced by client/main.lua when the phone opens. There is no Lua
-    // here, so declare it directly - otherwise the fold control never appears in the browser and
-    // the foldable cannot be worked on outside the game at all.
-    useFoldStore.getState().applyShell(true, device.screen.w * 2);
+    const params = new URLSearchParams(window.location.search);
+    useFoldStore.getState().applyShell(true, device.screen.w * 2, params.get('fold') === 'open');
 
-    // The dev server needs a dark canvas to see the phone against. The demo
-    // build is embedded in a page that draws its own, so painting one here
-    // would show as a black slab around the device.
     if (!isDemo) {
         document.documentElement.style.setProperty('background', '#0a0a0a', 'important');
         document.body.style.setProperty('background', '#0a0a0a', 'important');
@@ -22,6 +19,9 @@ export function devInjectMockData(): () => void {
     const payload: OpenPayload = {
         locked:   true,
         battery:  86,
+        frameColor: params.get('frame') ?? undefined,
+        phoneLook: params.get('look') === 'slate' ? 'slate' : 'classic',
+        shellFollowsPhone: params.get('follow') !== '0',
         carrier:  'LifeInvader',
         signal:   4,
         showWifi: true,
@@ -81,8 +81,8 @@ export function devInjectMockData(): () => void {
             { id: 'dojmdt',     label: 'DOJ',         icon: 'dojmdt',     route: '/dojmdt',     accent: '#6D28D9', base: true },
             { id: 'racing',     label: 'Racing',      icon: 'racing',     route: '/racing',     accent: '#0A8C72', base: true },
         ],
-        locale: new URLSearchParams(window.location.search).get('loc') ?? 'en',
-        forceLtr: new URLSearchParams(window.location.search).get('ltr') === '1',
+        locale: params.get('loc') ?? 'en',
+        forceLtr: params.get('ltr') === '1',
         wifiConfigured: true,
         bluetoothConfigured: true,
         wallpaper: { lock: 'lockscreen.jpg', home: 'lockscreen.jpg' },
@@ -95,8 +95,6 @@ export function devInjectMockData(): () => void {
         data:   { startMs: Date.now() - (2 * 3600 + 17 * 60) * 1000 },
     }, '*');
 
-    // Base apps only: these land on a phone that has just been set up, before
-    // anything has been installed from the App Store.
     const seedNotifs = [
         { id: 'seed-mail',     app: 'mail',     appId: 'mail',     title: 'Marcus Baker', body: 'Sent over the paperwork you asked for.', time: '11 Jun' },
         { id: 'seed-messages', app: 'messages', appId: 'messages', title: 'Tommy V',      body: 'Sure Thing!',                            time: '13:15'  },
@@ -113,9 +111,6 @@ export function devInjectMockData(): () => void {
         ));
     }
 
-    // Setup is a full-screen takeover, so a seeded notification lands with no
-    // visible banner but an audible tone. Hold them until the flow is done.
-    // Only reachable outside FiveM, where a player in setup gets no traffic.
     function setupPending(): boolean {
         try {
             const raw = window.localStorage.getItem('sd-phone:setup:v1');

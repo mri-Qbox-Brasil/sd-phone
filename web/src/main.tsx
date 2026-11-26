@@ -20,11 +20,13 @@ import { useMocks } from '@/core/demo';
 import { initTileCheck } from '@/apps/maps/tileCheck';
 import { installScrollGuard } from '@/core/scrollGuard';
 import { installRemote } from '@/mri/remote/session';
+import { installPropScreenCapture } from '@/core/propScreenCapture';
 import './index.css';
 
 initTileCheck();
 installScrollGuard();
 installRemote();
+installPropScreenCapture();
 
 document.addEventListener('mousedown', e => {
     if ((e.target as HTMLElement | null)?.closest?.('.select-text')) return;
@@ -36,9 +38,6 @@ document.addEventListener('mousedown', e => {
     sel.removeAllRanges();
 });
 
-// Seeded only when absent, so clearing a key replays that flow on reload
-// (the website demo's "Replay setup" button relies on this) instead of
-// having the seed stomp it straight back.
 if (useMocks) {
     if (!localStorage.getItem('sd-phone:setup:v1')) localStorage.setItem('sd-phone:setup:v1', JSON.stringify({ completed: true, theme: 'light', wallpaper: 'lockscreen.jpg' }));
     if (!localStorage.getItem('sd-phone:cookie:v1')) localStorage.setItem('sd-phone:cookie:v1', JSON.stringify({ cookies: 25040, earned: 25040, owned: { cursor: 8, grandma: 4 }, achievements: ['a100', 'a1k', 'a10k', 'cps5'], rainOn: true }));

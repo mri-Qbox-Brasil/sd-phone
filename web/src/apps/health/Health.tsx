@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HeartPulse, Stethoscope, Trophy } from 'lucide-react';
 
+import { isHostMessage } from '@/core/messageSource';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -25,6 +26,7 @@ const live = {
     heartRate: null as number | null,
 };
 window.addEventListener('message', (e: MessageEvent) => {
+    if (!isHostMessage(e)) return;
     const msg = e.data as { action?: string; data?: Record<string, unknown> } | undefined;
     if (!msg?.data) return;
     if (msg.action === 'sd-phone:health') {
@@ -76,12 +78,14 @@ export function Health({ onClose }: { onClose: () => void }) {
         if (typeof data.heartRate === 'number') setHr(data.heartRate);
     }, []));
 
+    const deckActive = useDeckActive();
     useEffect(() => {
+        if (!deckActive) return;
+        setNow(Date.now());
         const id = window.setInterval(() => setNow(Date.now()), 1000);
         return () => window.clearInterval(id);
-    }, []);
+    }, [deckActive]);
 
-    const deckActive = useDeckActive();
     const { data: summary, refetch: refetchSummary } = useAsyncData(apiSummary, [deckActive], { enabled: deckActive });
     useEffect(() => { refetchRef.current = refetchSummary; }, [refetchSummary]);
     const { data: board } = useAsyncData(apiLeaderboard, [deckActive], { enabled: deckActive });

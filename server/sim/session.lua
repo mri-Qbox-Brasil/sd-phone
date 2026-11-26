@@ -39,7 +39,7 @@ local TTL = 5000
 ---@field hasPhone boolean player carries at least one configured phone item
 ---@field hasSim boolean the active phone has a SIM
 ---@field sims SimEntry[] every SIM'd phone carried (all stay reachable for calls/messages)
----@field active SimEntry|nil the phone the player last opened (falls back to the first SIM)
+---@field active SimEntry|table|nil the phone the player last opened (falls back to the first SIM; a SIM-less pick is the bare item)
 ---@field identity string|nil active SIM's data identity
 ---@field number string|nil active SIM's number
 ---@field color string|nil active phone's frame colour
@@ -59,6 +59,86 @@ local prefs = {}
 ---@type table<number, table<string, true>> Numbers each source has asserted sole ownership of
 ---this session, so rows a past double-mint left behind are released once, not on every resolve.
 local claimed = {}
+
+---@type integer How long one player's indexed identities are trusted before the sweep re-reads
+---their inventory (ms). Moves through the inventory hooks re-index at once; this only bounds
+---changes no hook reports, such as items another script adds or takes.
+local INDEX_TTL = 60000
+
+---@type table<number, { at: number, active: string|nil, all: table<string, true> }> What each
+---source's last resolve found: the identity it acts as and every identity it carries.
+local indexed = {}
+
+---@type table<string, table<number, true>> Identity -> sources carrying it on any phone.
+local carriers = {}
+
+---@type table<string, table<number, true>> Identity -> sources acting as it on their active phone.
+local actors = {}
+
+---Removes `source` from one reverse map's set for `identity`, dropping the set once empty.
+---@param map table<string, table<number, true>>
+---@param identity string
+---@param source number
+local function unlink(map, identity, source)
+    local set = map[identity]
+    if not set then return end
+    set[source] = nil
+    if next(set) == nil then map[identity] = nil end
+end
+
+---Adds `source` to one reverse map's set for `identity`.
+---@param map table<string, table<number, true>>
+---@param identity string
+---@param source number
+local function link(map, identity, source)
+    local set = map[identity]
+    if not set then
+        set = {}
+        map[identity] = set
+    end
+    set[source] = true
+end
+
+---Drops everything the index holds for one source.
+---@param source number player server id
+local function unindex(source)
+    local entry = indexed[source]
+    if not entry then return end
+    indexed[source] = nil
+    for identity in pairs(entry.all) do unlink(carriers, identity, source) end
+    if entry.active then unlink(actors, entry.active, source) end
+end
+
+---Records what a fresh resolve found for one source, replacing its previous entry, so identity
+---lookups read a map instead of resolving every online player.
+---@param source number player server id
+---@param s SimSession|nil the resolved session (nil = no phone)
+---@param now number GetGameTimer stamp of the resolve
+local function reindex(source, s, now)
+    unindex(source)
+    local all = {}
+    if s then
+        for _, entry in ipairs(s.sims) do
+            if entry.identity then all[entry.identity] = true end
+        end
+    end
+    local active = s and s.identity or nil
+    indexed[source] = { at = now, active = active, all = all }
+    for identity in pairs(all) do link(carriers, identity, source) end
+    if active then link(actors, active, source) end
+end
+
+---The sources in one reverse-map set, copied out so verifying them (which may re-resolve and
+---re-index) never edits the set mid-traversal.
+---@param set table<number, true>|nil
+---@return number[]
+local function candidates(set)
+    local out = {}
+    if set then
+        for src in pairs(set) do out[#out + 1] = src end
+    end
+    return out
+end
 
 ---Mirrors `number` onto `identity`'s settings row, announcing the attach when it changes, and
 ---once per session releases the number from any other row still holding it.
@@ -125,10 +205,53 @@ local function pickActive(source, entries)
     return active or entries[1]
 end
 
+---Finds the explicitly selected physical phone when it has no SIM. Legacy mode's `entries`
+---contains only SIM-backed phones, so pickActive would otherwise fall back to another phone's SIM.
+---A phone counts as SIM-less when it is missing from `sims`, so its SIM is not read a second time
+---(in tray mode that read can activate a blank card), and a SIM that failed to register leaves
+---its phone without service instead of lending it another phone's.
+---@param source number player server id
+---@param phones table[] every phone item the player carries
+---@param sims SimEntry[] phones with registered SIM identities
+---@return table|nil phone selected without a SIM
+local function pickSelectedPhoneWithoutSim(source, phones, sims)
+    local pref = prefs[source]
+    if not pref then return nil end
+
+    local simSlots = {}
+    for _, sim in ipairs(sims) do simSlots[sim.slot] = true end
+
+    if pref.slot then
+        for _, phone in ipairs(phones) do
+            if phone.slot == pref.slot then
+                return not simSlots[phone.slot] and phone or nil
+            end
+        end
+    end
+
+    if pref.number then
+        for _, sim in ipairs(sims) do
+            if sim.number == pref.number then return nil end
+        end
+    end
+
+    if pref.color then
+        for _, sim in ipairs(sims) do
+            if sim.color == pref.color then return nil end
+        end
+        for _, phone in ipairs(phones) do
+            if phone.color == pref.color and not simSlots[phone.slot] then
+                return phone
+            end
+        end
+    end
+end
+
 ---LEGACY (SIM-is-identity) resolver. Binds every SIM found: unknown numbers are registered, the
 ---first activator stamped, and each SIM identity's phone_settings row mirrors its number so
 ---every existing "my number" read keeps working. The active phone is the last-opened one
----(prefs), else the first SIM'd phone in config order, else the first phone.
+---(prefs), else the first SIM'd phone in config order. A selected phone without a SIM stays
+---active without borrowing another phone's SIM.
 ---@param source number player server id
 ---@param phones { slot: number, name: string, color: string, metadata: table }[]
 ---@return SimSession
@@ -151,14 +274,19 @@ local function computeLegacy(source, phones)
         end
     end
 
-    local active = pickActive(source, sims)
+    local active = pickSelectedPhoneWithoutSim(source, phones, sims) or pickActive(source, sims)
+    local number, identity
+    if active and active.number then
+        number, identity = active.number, active.identity
+    end
+
     return {
         hasPhone = true,
-        hasSim   = active ~= nil,
+        hasSim   = number ~= nil,
         sims     = sims,
         active   = active,
-        identity = active and active.identity or nil,
-        number   = active and active.number or nil,
+        identity = identity,
+        number   = number,
         color    = active and active.color or phones[1].color,
         slot     = active and active.slot or phones[1].slot,
     }
@@ -356,6 +484,7 @@ function session.resolve(source)
         error(s, 0)
     end
     cache[source] = { at = now, s = s }
+    reindex(source, s, now)
     p:resolve(s)
     return s
 end
@@ -388,6 +517,100 @@ end
 ---@return boolean
 function session.hasIdentity(source, identity)
     return session.identities(source)[identity] == true
+end
+
+---The online source acting as `identity` on their active phone, nil when nobody is. Reads the
+---index for candidates, then confirms each through its own session (re-read once its cache
+---expires), so a phone that left a player's inventory stops resolving to them within the cache
+---lifetime, as it did when every online player was resolved per lookup.
+---@param identity string data identity
+---@return number|nil source
+function session.sourceActingAs(identity)
+    for _, src in ipairs(candidates(actors[identity])) do
+        if session.identity(src) == identity then return src end
+    end
+    return nil
+end
+
+---The online source carrying `identity` on any phone (a pocketed phone counts), nil when nobody
+---is. Confirmed per candidate like sourceActingAs.
+---@param identity string data identity
+---@return number|nil source
+function session.sourceCarrying(identity)
+    for _, src in ipairs(candidates(carriers[identity])) do
+        if session.hasIdentity(src, identity) then return src end
+    end
+    return nil
+end
+
+---The index, after re-resolving every indexed source whose session cache was dropped since it
+---was indexed (a phone switch, a panel refresh), so a batch map never answers from a session
+---already known to be out of date. Merely aged entries are left to the sweep.
+---@return table<number, { at: number, active: string|nil, all: table<string, true> }>
+local function currentIndex()
+    local dropped = {}
+    for src in pairs(indexed) do
+        if not cache[src] then dropped[#dropped + 1] = src end
+    end
+    for _, src in ipairs(dropped) do
+        local ok, err = pcall(session.resolve, src)
+        if not ok then
+            print(('^1[sd-phone:sim]^0 session re-read failed for %s: %s'):format(src, err))
+        end
+    end
+
+    return indexed
+end
+
+---`{ [identity] = source }` for the identity every indexed player acts as. Built from the index:
+---a fan-out builds this per push, and resolving every player for it was the cost.
+---@return table<string, number>
+function session.actingMap()
+    local out = {}
+    for src, entry in pairs(currentIndex()) do
+        if entry.active then out[entry.active] = src end
+    end
+    return out
+end
+
+---`{ [identity] = source }` for every identity every indexed player carries. Built from the index,
+---like actingMap.
+---@return table<string, number>
+function session.carryingMap()
+    local out = {}
+    for src, entry in pairs(currentIndex()) do
+        for identity in pairs(entry.all) do out[identity] = src end
+    end
+    return out
+end
+
+---Re-resolves every online player whose index entry is missing or older than INDEX_TTL, so the
+---index catches up with inventory changes no hook reported. Players without a loaded character
+---are skipped, and an entry left behind by a source that is gone is dropped.
+function session.refreshIndex()
+    if not state.active then return end
+
+    local now = GetGameTimer()
+    for src in pairs(indexed) do
+        if not GetPlayerName(src) then unindex(src) end
+    end
+
+    local due = {}
+    for _, id in ipairs(GetPlayers()) do
+        local src = tonumber(id)
+        local entry = src and indexed[src]
+        if src and (not entry or (now - entry.at) >= INDEX_TTL) and realIdentifier(src) then
+            due[#due + 1] = src
+        end
+    end
+
+    for _, src in ipairs(due) do
+        local ok, err = pcall(session.resolve, src)
+        if not ok then
+            print(('^1[sd-phone:sim]^0 index refresh failed for %s: %s'):format(src, err))
+        end
+        Wait(0)
+    end
 end
 
 ---True when the ACTIVE phone "belongs" to the player: its first activator matches their real
@@ -428,17 +651,29 @@ function session.push(source)
         hasSim  = s ~= nil and s.hasSim or false,
         number  = s and s.number or nil,
         color   = s and s.color or nil,
+        fold    = s and s.active and s.active.name and require('shared.phonefold').item(s.active.name) or nil,
+        look    = s and s.active and s.active.name and require('shared.phonefold').itemLook(s.active.name) or nil,
         -- Device/character mode: the setup/profile localStorage namespace keys off the acting
         -- identity (stable across SIM swaps); legacy keys off the number, client-side.
         profile = deviceLike and s and s.identity or nil,
     })
 end
 
--- Dropped players release their cache + preference entries.
+-- Dropped players release their cache, preference and index entries.
 AddEventHandler('playerDropped', function()
     cache[source] = nil
     prefs[source] = nil
     claimed[source] = nil
+    unindex(source)
+end)
+
+-- Index upkeep: a quick pass every 10s that only re-reads players whose entry has aged past
+-- INDEX_TTL, so each player costs at most one inventory read a minute.
+CreateThread(function()
+    while true do
+        Wait(10000)
+        session.refreshIndex()
+    end
 end)
 
 return session

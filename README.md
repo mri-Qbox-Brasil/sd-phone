@@ -2,17 +2,27 @@
 
 # sd-phone
 
-<a href="https://www.youtube.com/watch?v=65EoH00dlhw">
-  <img width="960" alt="sd-phone banner showing the Home screen in front of a wall of app screens" src="docs/previews/sd-phone-banner.webp">
+<a href="https://www.youtube.com/watch?v=Hn3WNeOE3Qc">
+  <img width="960" alt="sd-phone: regular, Slate and foldable phones in several colours, two of them in cases, with the Home screen in front" src="docs/previews/sd-phone-banner.webp">
 </a>
 
-<sub>▶ **[Video demo](https://www.youtube.com/watch?v=65EoH00dlhw)**</sub>
+[![Watch the preview](https://img.shields.io/badge/%E2%96%B6%20%20WATCH%20THE%20PREVIEW-2%20minutes%20on%20YouTube-FF5A5A?style=for-the-badge&labelColor=101114)](https://www.youtube.com/watch?v=Hn3WNeOE3Qc)
+[![Open the live demo](https://img.shields.io/badge/%E2%96%B6%20%20OPEN%20THE%20LIVE%20DEMO-fivem.samueldev.shop%2Fphone-F0E155?style=for-the-badge&labelColor=101114&logoColor=F0E155)](https://fivem.samueldev.shop/phone)
+[![Get the phone props](https://img.shields.io/badge/%E2%AC%87%20%20GET%20THE%20PROPS-sd--phone--props%20%28required%29-5FE3C8?style=for-the-badge&labelColor=101114)](https://github.com/Samuels-Development/sd-phone-props)
+
+### Preview video
+
+<a href="https://www.youtube.com/watch?v=Hn3WNeOE3Qc">
+  <img width="720" alt="Watch the sd-phone preview: the Classic phone from the front and the back, the Slate design and the foldable" src="docs/previews/sd-phone-video.webp">
+</a>
+
+A two-minute tour of the phone: 51 apps, both designs, the foldables and the cases you design yourself.
+
+<sub>[Watch on YouTube](https://www.youtube.com/watch?v=Hn3WNeOE3Qc)</sub>
 
 ### Browser demo
 
-[![Open the live demo](https://img.shields.io/badge/%E2%96%B6%20%20OPEN%20THE%20LIVE%20DEMO-fivem.samueldev.shop%2Fphone-F0E155?style=for-the-badge&labelColor=101114&logoColor=F0E155)](https://fivem.samueldev.shop/phone)
-
-The phone and tablet UIs run here with sample data. Unlock the phone, move apps around, install apps, open the police terminal or use fullscreen. Nothing to install.
+The phone and tablet UIs run in your browser with sample data. Unlock the phone, move apps around, install apps, open the police terminal or use fullscreen. Nothing to install.
 
 <sub>[fivem.samueldev.shop/phone](https://fivem.samueldev.shop/phone)</sub>
 
@@ -34,11 +44,21 @@ Scripts and custom apps written for lb-phone, qs-smartphone, gksphone, roadphone
 
 [**Live demo**](https://fivem.samueldev.shop/phone) · [**Documentation**](https://docs.samueldev.shop/resources/phone/) · [**Store**](https://fivem.samueldev.shop) · [**Discord**](https://discord.gg/FzPehMQaBQ)
 
+**Required:** [**sd-phone-props**](https://github.com/Samuels-Development/sd-phone-props), the phones, foldables and cases you hold in game · [**ox_lib**](https://github.com/CommunityOx/ox_lib) · [**oxmysql**](https://github.com/CommunityOx/oxmysql)
+
 **Works together:** **sd-phone** · [**sd-tablet**](https://github.com/Samuels-Development/sd-tablet) · [**sd-computers**](https://github.com/Samuels-Development/sd-computers)
 
 </div>
 
 ---
+
+## In game
+
+Use it full-screen, or switch on DUI mode and the live UI runs on the phone in your character's hand, tapped with the mouse.
+
+<p align="center"><a href="docs/previews/07-in-game.webp"><img src="docs/previews/07-in-game.webp" alt="In game: the full-screen phone beside the player, and the optional DUI mode with the UI on the phone in the player's hand" width="960" /></a></p>
+
+<p align="center"><sub>Left: the default full-screen phone. Right: the optional <a href="#dui-phone-option-ui-on-the-held-prop">DUI mode</a>.</sub></p>
 
 ## Support Me
 
@@ -58,15 +78,15 @@ Captured from the browser demo using sample data. Click an image for the full 19
 
 <p align="center"><a href="docs/previews/01-home-messages.webp"><img src="docs/previews/01-home-messages.webp" alt="Home and Messages" width="960" /></a></p>
 
-<p align="center"><a href="docs/previews/02-social-apps.webp"><img src="docs/previews/02-social-apps.webp" alt="Photogram and Squawk" width="960" /></a></p>
+<p align="center"><a href="docs/previews/02-social-apps.webp"><img src="docs/previews/02-social-apps.webp" alt="Photogram, Squawk and Clout" width="960" /></a></p>
 
-<p align="center"><a href="docs/previews/03-maps-ryde.webp"><img src="docs/previews/03-maps-ryde.webp" alt="Maps and Ryde" width="960" /></a></p>
+<p align="center"><a href="docs/previews/03-maps-ryde.webp"><img src="docs/previews/03-maps-ryde.webp" alt="Maps, Ryde and Garages" width="960" /></a></p>
 
-<p align="center"><a href="docs/previews/04-banking-marketplace.webp"><img src="docs/previews/04-banking-marketplace.webp" alt="Wallet and Marketplace" width="960" /></a></p>
+<p align="center"><a href="docs/previews/04-banking-marketplace.webp"><img src="docs/previews/04-banking-marketplace.webp" alt="Wallet, Marketplace and Pages" width="960" /></a></p>
 
 <p align="center"><a href="docs/previews/05-weather-health-services.webp"><img src="docs/previews/05-weather-health-services.webp" alt="Weather, Health and Services" width="960" /></a></p>
 
-<p align="center"><a href="docs/previews/06-fold-maps.webp"><img src="docs/previews/06-fold-maps.webp" alt="Maps on the opened fold screen" width="960" /></a></p>
+<p align="center"><a href="docs/previews/06-fold-maps.webp"><img src="docs/previews/06-fold-maps.webp" alt="Maps on the opened fold screen, beside a shut foldable" width="960" /></a></p>
 
 ---
 
@@ -156,7 +176,7 @@ ensure sd-phone-props
 ensure sd-phone
 ```
 
-The database tables create themselves. Then add the eight phone items (`phone_black` to `phone_yellow`), your Fivemanage key and, for video calls between different networks, a TURN relay. All of it, step by step: **[installation docs](https://docs.samueldev.shop/resources/phone/installation)**.
+The database tables create themselves. Then add the phone items (one per colour in `configs/phone.lua`, `phone_black` onwards), your Fivemanage key and, for video calls between different networks, a TURN relay. All of it, step by step: **[installation docs](https://docs.samueldev.shop/resources/phone/installation)**.
 
 ### Building from source
 
@@ -167,3 +187,68 @@ cd web
 npm ci
 npm run build
 ```
+
+### Phone cases
+
+Players dress their phone in a case that everyone sees on the phone in their hand. A case is a shell in one of seven styles and 64 colours, with an optional pattern, back accessory, swinging charm and sticker (an icon, a brand, or one of the player's own gallery photos). The models come from [sd-phone-props](https://github.com/Samuels-Development/sd-phone-props).
+
+- **Case stores:** cases are designed and bought at stores in the world (`Stores` in `configs/cases.lua`: a clerk, a blip, a price list). Talking to the clerk stands the player's own phone in a studio booth in front of a camera in 3D: drag to turn it, scroll to zoom, and it wears whatever the customizer beside it has picked. With no target resource (ox_target, qb-target, qtarget) the store opens with E.
+- **A case is an item:** buying one puts a `phone_case` item in the player's pockets with the design stored on it. It can be given, traded, sold or handed out by other scripts like anything else.
+- **A case belongs to a phone:** using the item fits the case to the player's phone, asking which when they carry several, and the case that phone had comes back as an item. It is kept on that phone's own item, so each phone has its own case and it goes wherever the phone goes. At a store, "Put it on now" fits the phone on show.
+- **The phone itself:** the store's Phone tab holds the free choices about the phone: its design (classic or Slate), the logo on its back and coloured trims. `Looks.Designs` in `configs/phone.lua` says which designs a server has: both, or only one.
+- **Taking it off:** the phone item's Phone Case button (or `/phonecase`), or Settings, Phone Case, on the phone itself: the case comes back as an item.
+
+Add the item to your inventory. For ox_inventory, in `data/items.lua`:
+
+```lua
+['phone_case'] = {
+    label = 'Phone Case',
+    weight = 40,
+    stack = false,   -- every case carries its own design
+    close = true,
+    consume = 0,     -- required: sd-phone takes the item itself when the case goes on
+    description = 'A phone case. Use it to put it on your phone.',
+    server = { export = 'sd-phone.usePhone_case' },
+    buttons = {
+        { label = 'Put On a Phone', action = function(slot) exports['sd-phone']:fitPhoneCase(slot) end },
+    },
+},
+```
+
+and give each phone item a button for its own case, next to any it already has:
+
+```lua
+buttons = {
+    { label = 'Phone Case', action = function(slot) exports['sd-phone']:openPhoneCaseMenu(slot) end },
+},
+```
+
+Right-clicking a case then offers "Put On a Phone" (a list when the player carries several), and right-clicking a phone offers "Phone Case": take off the one it has, or fit one from the pockets. Inventories with no buttons on their items get the same list from the `/phonecase` command (`Command` in `configs/cases.lua`).
+
+For qb-core and Qbox items (`shared/items.lua`):
+
+```lua
+phone_case = { name = 'phone_case', label = 'Phone Case', weight = 40, type = 'item', image = 'phone_case.png', unique = true, useable = true, shouldClose = true, description = 'A phone case. Use it to put it on your phone.' },
+```
+
+The icon is `images/phone_case.png`. To hand a player a ready-made case from another script, give the item with the design as its data:
+
+```lua
+exports.ox_inventory:AddItem(source, 'phone_case', 1, {
+    case = { style = 'leather', color = 4, charm = 'heart', charmColor = 17 },
+    description = 'Leather case, heart charm',
+})
+```
+
+The inventory has to be able to keep data on a single item, which every inventory sd-phone reads SIM cards from can. Where it cannot, or with `AsItems = false`, there is no item: a bought case joins a list the character keeps (`MaxOwned`) and is swapped at any store under "Your cases". `Enabled = false` switches cases off altogether.
+
+### DUI phone option (UI on the held prop)
+
+Optional and **off by default**. With `PropScreen.Enabled = true` in `configs/phone.lua`, the phone UI is drawn on the screen of the phone in the player's hand instead of the full-screen overlay: the live UI runs in a DUI whose image replaces the prop's screen texture, a close-up camera eases in on the phone, and the mouse becomes a finger on the screen.
+
+- **Enable:** set `PropScreen.Enabled = true`. [sd-phone-props](https://github.com/Samuels-Development/sd-phone-props) streams everything it needs: a live-screen model for every colour, design and logo, and the `sd_phone_dui` texture dictionary whose screen texture is swapped. No UI rebuild is needed: `web/dui/phone.html` boots the normal `web/build` bundle. If the models are missing, a warning is printed in F8 once and the phone stays full-screen.
+- **Controls:** left click taps, the wheel scrolls, right click or Backspace goes back, Enter unlocks, ESC puts the phone away. Tap a text field and type straight onto the screen; tap anywhere else or press Escape to stop typing.
+- **Camera and hold:** the camera follows the phone but keeps its own heading, so the world behind it stands still while the hand moves (`CamSteady`). The phone is held in a grip made for this view (`stream/sd_phone@hold.ycd`), the thumb along the edge rather than across the glass. `CamDistance`, `CamFov`, `CamRise`, `HoldAnim`, `HandOffset` and `HandRot` adjust both.
+- **Screen:** the picture is corrected for the game's tone mapping so it does not look washed out, dims after dark (`Brightness`), and is drawn at the size the phone has on each player's monitor so small text stays sharp (`AutoResolution`).
+- **Falls back to full-screen:** in a vehicle, for the Camera app and video calls (the phone reopens full-screen; tap the app again), and when a foldable is unfolded (unless `PropScreen.Foldable = true`, which letterboxes the wide UI onto the portrait screen).
+- **Known limits:** on foot only; the DUI runs a second copy of the UI that mirrors every push, so it costs extra memory and CPU while enabled (sound in the copy is muted except while it is on the prop); the hand still drifts a few millimetres with the character's idle stance.

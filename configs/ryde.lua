@@ -21,6 +21,13 @@ return {
     -- 1.0 = the driver keeps the whole fare; 0.9 would skim a 10% platform cut.
     DriverCut = 0.8,
 
+    -- The agreed fare leaves the rider's bank when the driver starts the trip
+    -- and is paid out at drop-off. A rider who cancels or disconnects after the
+    -- start pays for the share already driven (the driver gets their cut of it),
+    -- so nobody can cancel at the kerb to ride for free. false refunds the rider
+    -- in full on any cancel after the start, as older versions did.
+    RiderCancelPays = true,
+
     -- Guard rails on the fare a driver may quote (whole dollars).
     MinFare = 1,
     MaxFare = 100000,

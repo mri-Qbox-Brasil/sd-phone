@@ -1,4 +1,4 @@
----@type table Shared server helpers (server.util): ensureColumns.
+---@type table Shared server helpers (server.util): ensureColumns, tableExists, ensureIndex.
 local util = require 'server.util'
 
 ---@type table Migrations module; the table returned at end of file. The single place column
@@ -65,6 +65,12 @@ local COLUMNS = {
         declined = 'declined TINYINT(1) NOT NULL DEFAULT 0',
     },
 
+    -- Unread inbox mail per mailbox, kept beside the messages blob so a badge reads a number
+    -- instead of decoding the blob. NULL means not counted yet; the mail store fills it in.
+    phone_mail_accounts = {
+        unread_inbox = 'unread_inbox INT NULL',
+    },
+
     -- Which terminal filed the report. Defaulting to 'leo' is what keeps the back-fill safe: every
     -- row that predates the medical terminal was written by a police department, and the default
     -- states exactly that rather than leaving a NULL for the scoping clause to interpret.
@@ -129,17 +135,77 @@ local COLUMNS = {
         publish_status    = "publish_status VARCHAR(20) NOT NULL DEFAULT 'published'",
         rejection_reason  = 'rejection_reason TEXT NULL',
     },
+
+    -- The milestone counter, kept per CHARACTER on the row of their real identity, so a streak
+    -- run on a fresh SIM cannot pay the same milestones again. NULL reward_date means not counted
+    -- yet, which the first post after the upgrade seeds from that phone's own streak.
+    phone_streaks = {
+        reward_streak = 'reward_streak INT NOT NULL DEFAULT 0',
+        reward_date   = 'reward_date DATE NULL',
+    },
+
+    -- How many sketches a note holds and how big they are, so the list and the storage caps never
+    -- read the sketches themselves. NULL marks a row written before these existed; the notes store
+    -- measures those the first time their owner opens Notes.
+    phone_notes = {
+        sketch_count = '`sketch_count` SMALLINT UNSIGNED NULL',
+        sketch_bytes = '`sketch_bytes` INT UNSIGNED NULL',
+    },
 }
 
----Brings one table up to date, in a single information_schema read and at most one ALTER. Called
----from the owning store's ensureSchema right after its CREATE TABLE, where the table is known to
----exist - that keeps execution order correct without a central boot sequence.
+---@type table<string, table<string, string>> table name -> index name -> column list incl. parens.
+---Indexes added since v0.9.0, back-filled the same way. An index on a table its module owns is
+---declared in that store's CREATE TABLE too, so fresh installs get it, and is applied by M.apply
+---after COLUMNS, so it may cover a column that list adds. An index for a scan one module runs
+---against a table another module owns is applied by the scanning module through M.applyIndexes.
+local INDEXES = {
+    -- The thread list's preview query filters each mailbox on withheld, groups it by conversation
+    -- and reads created_at, direction and is_read; covering all of it keeps that one query off the
+    -- table rows for a mailbox of any size.
+    phone_messages = {
+        idx_phone_messages_preview = '(citizenid, withheld, conversation, created_at, direction, is_read)',
+    },
+
+    -- Cloud backup (server/sim/backup.lua) reads, copies and clears every row of one identity in
+    -- both, and neither table's keys lead with citizenid, so each of those statements read the
+    -- whole table.
+    phone_message_reactions = {
+        idx_phone_message_reactions_cid = '(citizenid)',
+    },
+    phone_app_sessions = {
+        idx_phone_app_sessions_cid = '(citizenid)',
+    },
+}
+
+---Adds the catalogued lookup indexes to one table; a no-op for tables the catalog does not list.
+---A table that does not exist yet is skipped rather than reported: on a fresh install its owner
+---creates it on another boot thread, and an empty table needs no index before the next boot.
 ---@param tbl string table name
----@return boolean added true when at least one column was created
+---@return integer added indexes created on this call
+function M.applyIndexes(tbl)
+    local defs = INDEXES[tbl]
+    if not defs or not util.tableExists(tbl) then return 0 end
+    local added = 0
+    for name, ddl in pairs(defs) do
+        if util.ensureIndex(tbl, name, ddl) then added = added + 1 end
+    end
+    return added
+end
+
+---Brings one table up to date: its missing columns in a single information_schema read and at
+---most one ALTER, then any missing index. Called from the owning store's ensureSchema once the
+---table and every column an index covers are known to exist - that keeps execution order correct
+---without a central boot sequence.
+---@param tbl string table name
+---@return boolean added true when at least one column or index was created
 function M.apply(tbl)
+    local added = false
     local defs = COLUMNS[tbl]
-    if not defs then return false end
-    return util.ensureColumns(tbl, defs)
+    if defs then added = util.ensureColumns(tbl, defs) end
+    for name, columns in pairs(INDEXES[tbl] or {}) do
+        if util.ensureIndex(tbl, name, columns) then added = true end
+    end
+    return added
 end
 
 return M

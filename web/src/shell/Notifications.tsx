@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { ComponentProps, PointerEvent as ReactPointerEvent } from 'react';
 import { AlertTriangle, Bell } from 'lucide-react';
 
 import { AppIconSVG } from './AppIconSVG';
 import { t } from '@/i18n';
 import { localizeShareVars } from '@/i18n/dynamicLabels';
 import { useStreamerHidden } from '@/stores/themeStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 
 
 export interface NotificationItem {
@@ -18,13 +19,8 @@ export interface NotificationItem {
     appId?: string;
     link?:  Record<string, unknown>;
     emergency?: boolean;
-    /** Pocket buzz from a carried-but-not-active phone: transient banner only, never this
-     *  phone's lockscreen stack or badges. */
     otherPhone?: boolean;
-    /** Pocket buzz: the buzzing phone's frame colour, tinting the closed-shell peek. */
     phoneColor?: string;
-    /** Pocket buzz: the buzzing phone's profile key - the banner parks on that profile's
-     *  banked lockscreen stack so it shows when THAT phone is next opened. */
     profileKey?: string;
 }
 
@@ -69,9 +65,6 @@ export function NotifIcon({ item, size = 38 }: { item: NotificationItem; size?: 
             </span>
         );
     }
-    // `app` is a display label ("Weazel News", or "<Color> Phone" on a pocket buzz) while `appId`
-    // is the registry id the icon set is keyed by, so the id wins wherever a sender supplies one.
-    // The lowercase fold catches senders that pass only a label matching an id.
     const icon = item.appId ?? item.app?.toLowerCase();
     if (icon) {
         return (
@@ -194,4 +187,9 @@ export function NotificationHost({ items, placement = 'phone', onDismiss, onOpen
             ))}
         </div>
     );
+}
+
+export function BannerHost(props: Omit<ComponentProps<typeof NotificationHost>, 'items'>) {
+    const items = useNotificationStore(s => s.banners);
+    return <NotificationHost {...props} items={items} />;
 }

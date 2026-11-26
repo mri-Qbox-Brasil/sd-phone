@@ -41,15 +41,13 @@ end
 
 -- Reachability: a player is "online as" EVERY identity whose SIM they carry, not just the
 -- active phone's - calls addressed to any of their numbers ring them (a pocketed phone rings).
+-- These four read the session index (server.sim.session) rather than resolving every online
+-- player per lookup.
 local baseGetAnySource = player.getAnySourceByIdentifier
 function player.getAnySourceByIdentifier(citizenid)
     if not state.active then return baseGetAnySource(citizenid) end
     if not citizenid or citizenid == '' then return nil end
-    for _, src in ipairs(GetPlayers()) do
-        local s = tonumber(src)
-        if s and session.hasIdentity(s, citizenid) then return s end
-    end
-    return nil
+    return session.sourceCarrying(citizenid)
 end
 
 -- Live-UI delivery: every push resolved through this lands only when `citizenid` is the phone
@@ -59,11 +57,7 @@ local baseGetSource = player.getSourceByIdentifier
 function player.getSourceByIdentifier(citizenid)
     if not state.active then return baseGetSource(citizenid) end
     if not citizenid or citizenid == '' then return nil end
-    for _, src in ipairs(GetPlayers()) do
-        local s = tonumber(src)
-        if s and session.identity(s) == citizenid then return s end
-    end
-    return nil
+    return session.sourceActingAs(citizenid)
 end
 
 -- Batch form of getSourceByIdentifier above, and it must track it: ACTIVE identity only, so a
@@ -71,28 +65,13 @@ end
 local baseActiveCidMap = player.activeCidMap
 function player.activeCidMap()
     if not state.active then return baseActiveCidMap() end
-    local out = {}
-    for _, src in ipairs(GetPlayers()) do
-        local s = tonumber(src)
-        if s then
-            local id = session.identity(s)
-            if id then out[id] = s end
-        end
-    end
-    return out
+    return session.actingMap()
 end
 
 local baseCidMap = player.onlineCidMap
 function player.onlineCidMap()
     if not state.active then return baseCidMap() end
-    local out = {}
-    for _, src in ipairs(GetPlayers()) do
-        local s = tonumber(src)
-        if s then
-            for identity in pairs(session.identities(s)) do out[identity] = s end
-        end
-    end
-    return out
+    return session.carryingMap()
 end
 
 ---Sends a simple ox_lib toast to a player.
@@ -111,27 +90,53 @@ local function watchedItems()
     return watched
 end
 
----Flushes the whole session cache and pushes fresh SIM state to `source` on the next tick, after
----the inventory has finished the move that triggered it.
----@param source any player server id from a hook payload
-local function refreshAfterMove(source)
+---The players a hook payload's move touched: whoever made it, plus the owner of the inventory on
+---either side when that side is a player's (a give, or taking from a searched player). Stash,
+---drop, glovebox and tray ids are nobody's, and tray moves are made by the phone's holder.
+---@param payload table ox_inventory or one_inventory hook payload
+---@return number[] sources
+local function movedPlayers(payload)
+    local out, seen = {}, {}
+    for _, side in ipairs({
+        { payload.source },
+        { payload.fromInventory, payload.fromType },
+        { payload.toInventory, payload.toType },
+    }) do
+        local src = (side[2] == nil or side[2] == 'player') and tonumber(side[1]) or nil
+        if src and src > 0 and not seen[src] then
+            seen[src] = true
+            out[#out + 1] = src
+        end
+    end
+    return out
+end
+
+---Re-reads the SIM state of every player a move touched and pushes it to them on the next tick,
+---after the inventory has finished the move. Only those players: every other session is
+---unaffected by the move, and flushing them all made each phone drag cost a re-scan per player.
+---@param payload table hook payload
+local function refreshAfterMove(payload)
+    local players = movedPlayers(payload)
     SetTimeout(0, function()
-        session.invalidate(nil)
-        local src = tonumber(source)
-        if src then session.push(src) end
+        for _, src in ipairs(players) do
+            if GetPlayerName(src) then session.push(src) end
+        end
     end)
 end
 
 ---ox_inventory: watch SIM/phone item moves so a pulled SIM cuts service within a swap, not a
----cache TTL. Tray mode adds two guards: only the phone's holder may open its tray, and only a SIM
----may go in it.
+---cache TTL. The item filter keeps ox from calling in for any other item; it matches either side
+---of a swap, so a phone displaced by another item is caught too. Tray mode adds two guards: only
+---the phone's holder may open its tray, and only a SIM may go in it.
 local function registerOxHooks()
     local watched = watchedItems()
     pcall(function()
         exports.ox_inventory:registerHook('swapItems', function(payload)
-            if not watched[payload.fromSlot and payload.fromSlot.name or ''] then return end
-            refreshAfterMove(payload.source)
-        end, {})
+            local moved = payload.fromSlot and payload.fromSlot.name
+            local displaced = type(payload.toSlot) == 'table' and payload.toSlot.name
+            if not watched[moved or ''] and not watched[displaced or ''] then return end
+            refreshAfterMove(payload)
+        end, { itemFilter = watched })
     end)
 
     if state.mode ~= 'tray' then return end
@@ -160,7 +165,7 @@ end
 ---Tray mode also adds a SIM Tray entry to each phone item's right-click menu.
 local function registerOneHooks()
     local watched = watchedItems()
-    local function onMove(payload) refreshAfterMove(payload.source) end
+    local function onMove(payload) refreshAfterMove(payload) end
     for _, hook in ipairs({ 'beforeItemSwap', 'beforeItemDrop', 'beforeItemGive' }) do
         pcall(function() exports.one_inventory:RegisterHook(hook, onMove, { itemFilter = watched }) end)
     end
@@ -219,6 +224,9 @@ CreateThread(function()
     if not ok then
         boot.schemaFailed('sim', err)
         return
+    end
+    if config.Sim.Backup and config.Sim.Backup.Enabled ~= false then
+        pcall(backup.ensureIndexes)
     end
 
     state.builtin = config.Sim.BuiltInNumbers == true
@@ -385,8 +393,8 @@ end)
 lib.callback.register('sd-phone:server:sim:get', function(source)
     local realCid = player.getRealIdentifier(source)
     if not realCid then return util.fail('sim.playerNotFound', 'Player not found') end
-    -- A rescan is an inventory search per carried phone plus registry writes. Shares the push
-    -- window so the panel is never more than one session-cache generation behind either way.
+    -- A rescan reads the inventory and writes the registry. Shares the push window so the
+    -- panel is never more than one session-cache generation behind either way.
     local now = GetGameTimer()
     if not lastRequestPush[source] or (now - lastRequestPush[source]) >= 5000 then
         lastRequestPush[source] = now
@@ -408,15 +416,14 @@ lib.callback.register('sd-phone:server:sim:get', function(source)
     end
 
     -- Backup profiles: one per phone. A profile restores once its snapshot exists (legacy
-    -- pointer rows restore from the live phone identity instead - unless it IS this phone).
+    -- pointer rows never do), and never onto the phone that made it outside character mode.
     local myProfile
     local profiles = {}
     local restorable = false
     for _, p in ipairs(simStore.listProfiles(realCid)) do
         local isCloud = lib.string.startsWith(p.identity, 'cloud:')
         local thisPhone = s ~= nil and s.identity == p.deviceIdentity
-        local canUse = (isCloud and p.syncedAt ~= nil)
-            or (not isCloud and (s == nil or s.identity ~= p.identity))
+        local canUse = (state.character or not thisPhone) and isCloud and p.syncedAt ~= nil
         if thisPhone then myProfile = p end
         profiles[#profiles + 1] = {
             device     = p.deviceIdentity,
@@ -498,6 +505,33 @@ local AUTO_SYNC_MIN_GAP = 300
 ---responsive, but enough that the ~88-statement run can't be looped at will.
 local MANUAL_SYNC_MIN_GAP = 30
 
+---Milliseconds one character waits between two restores: Backup.RestoreCooldown seconds, 600 when
+---a config predates the key. Read per call so a config edit applies on the next restore.
+---@return integer
+local function restoreGap()
+    local secs = tonumber(config.Sim.Backup and config.Sim.Backup.RestoreCooldown) or 600
+    return math.max(0, math.floor(secs * 1000))
+end
+
+---@type integer Rolling window for backup-password checks (ms), shared by enabling and restoring.
+local GUESS_WINDOW = 300000
+
+---@type integer Backup-password checks one character may make inside GUESS_WINDOW.
+local GUESS_MAX = 10
+
+---@type integer Minimum gap between two backup-password checks by one character (ms).
+local GUESS_GAP = 1000
+
+---True when the character may have their backup password checked now. Called BEFORE the check
+---on both paths that take the password, under one shared key, so alternating between enabling
+---and restoring buys no extra guesses: one a second, ten per five minutes.
+---@param realCid string real (framework) citizenid
+---@return boolean
+local function mayCheckPassword(realCid)
+    return util.cooldown(realCid, 'sim:backupPassword', GUESS_GAP)
+        and util.rateLimit(realCid, 'sim:backupPassword', GUESS_WINDOW, GUESS_MAX)
+end
+
 ---Takes a fresh snapshot of `s.identity` into ITS profile, converting a legacy pointer row to
 ---a `cloud:` namespace on first use, and stamps the picker labels (colour + number).
 ---@param realCid string real (framework) citizenid
@@ -544,6 +578,9 @@ lib.callback.register('sd-phone:server:sim:backup:set', function(source, payload
         -- With no profiles left there is nothing the password protects: the entered password
         -- becomes the new one (also the recovery path for a forgotten password).
         if existing and simStore.profileCount(realCid) > 0 then
+            if not mayCheckPassword(realCid) then
+                return util.fail('sim.tooManyPasswordAttempts', 'Too many password attempts. Try again shortly.')
+            end
             if not accounts.verifyPassword(password, existing) then
                 return util.fail('sim.wrongBackupPasswordSSaved', 'Wrong backup password. It\'s saved in the Passwords app of your backed-up phone.')
             end
@@ -669,9 +706,16 @@ end)
 
 ---Restores a chosen backup profile onto the current phone: settings, contacts, messages,
 ---photos and app data are copied over - the phone NUMBER never is (it lives on the SIM; a lost
----number is lost). `payload.device` picks the profile (optional when only one restores).
----Requires the character's backup password. Restoring does NOT touch the snapshot or move any
----profile enrollment - the source phone keeps backing itself up.
+---number is lost), and neither is anything of value (see VALUE in server/sim/backup.lua).
+---`payload.device` picks the profile (optional when only one restores). Requires the
+---character's backup password. Restoring does NOT touch the snapshot or move any profile
+---enrollment - the source phone keeps backing itself up. In device and sim mode a profile never
+---restores onto the phone that made it, which already holds everything the backup does. Character
+---mode allows it, since every phone there is the character: it brings back what was deleted.
+---A legacy pointer backup (made before cloud snapshots) is refused: it could only copy whatever
+---its phone holds today. With no pick, a character holding only such a backup is told so rather
+---than told they have none. One character restores at most once per Backup.RestoreCooldown,
+---checked before the password and armed after it, since each restore adds the backup's rows again.
 lib.callback.register('sd-phone:server:sim:backup:restore', function(source, payload)
     if not (config.Sim.Backup and config.Sim.Backup.Enabled ~= false) then
         return util.fail('sim.cloudBackupDisabled', 'Cloud backup is disabled.')
@@ -690,25 +734,40 @@ lib.callback.register('sd-phone:server:sim:backup:restore', function(source, pay
         profile = simStore.getProfile(realCid, payload.device)
     else
         -- No pick: allowed only when exactly one profile can restore here.
-        local candidates = {}
+        local candidates, legacy = {}, nil
         for _, p in ipairs(simStore.listProfiles(realCid)) do
-            local isCloud = isCloudIdentity(p.identity)
-            if (isCloud and p.syncedAt ~= nil) or (not isCloud and p.identity ~= s.identity) then
+            local mine = not state.character and p.deviceIdentity == s.identity
+            if not isCloudIdentity(p.identity) then
+                if p.identity ~= s.identity then legacy = legacy or p end
+            elseif p.syncedAt ~= nil and not mine then
                 candidates[#candidates + 1] = p
             end
         end
         if #candidates > 1 then return util.fail('sim.pickWhichBackupRestore', 'Pick which backup to restore.') end
-        profile = candidates[1]
+        profile = candidates[1] or legacy
     end
     if not profile then return util.fail('sim.noCloudBackupFoundCharacter', 'No cloud backup found for this character.') end
     local isCloud = isCloudIdentity(profile.identity)
     if isCloud and profile.syncedAt == nil then return util.fail('sim.backupHasNeverCompleted', 'That backup has never completed.') end
-    if not isCloud and profile.identity == s.identity then
+    local ownPhone = profile.deviceIdentity == s.identity and not state.character
+    if ownPhone or (not isCloud and profile.identity == s.identity) then
         return util.fail('sim.phoneAlreadyHoldsBackedUp', 'This phone already holds the backed-up data.')
+    end
+    if not isCloud then
+        return util.fail('sim.oldBackupMakeNew', 'This is an old backup and can no longer be restored. Make a new Cloud Backup instead.')
+    end
+
+    local cooldownLeft = util.cooldownLeft(realCid, 'sim:backupRestore', restoreGap())
+    if cooldownLeft > 0 then
+        return util.fail('sim.restoreCooldown', 'You restored a backup recently. Try again in {minutes} min.',
+            { minutes = math.ceil(cooldownLeft / 60000) })
     end
 
     local stored = simStore.getBackupPassword(realCid)
     if stored then
+        if not mayCheckPassword(realCid) then
+            return util.fail('sim.tooManyPasswordAttempts', 'Too many password attempts. Try again shortly.')
+        end
         local given = type(payload.password) == 'string' and payload.password or ''
         local accounts = require 'server.accounts.store'
         if not accounts.verifyPassword(given, stored) then
@@ -717,16 +776,16 @@ lib.callback.register('sd-phone:server:sim:backup:restore', function(source, pay
     end
 
     if syncBusy[source] then return util.fail('sim.backupAlreadyRunning', 'A backup is already running.') end
-    -- Checked after the password so a fumbled one can be retried at once. A restore is idempotent
-    -- (the rows are remapped, so a repeat writes nothing) but costs the full copy every time.
-    if not util.cooldown(realCid, 'sim:backupRestore', 30000) then
-        return util.fail('sim.restoredMomentsAgoTryAgain', 'Restored moments ago. Try again in a moment.')
+    -- Armed only past the password, so a fumbled one does not start the wait.
+    if not util.cooldown(realCid, 'sim:backupRestore', restoreGap()) then
+        return util.fail('sim.restoreCooldown', 'You restored a backup recently. Try again in {minutes} min.',
+            { minutes = math.ceil(restoreGap() / 60000) })
     end
 
-    -- Snapshot untouched: restore copies OUT of the cloud. Live room state (groups, mail
-    -- logins) moves from the profile's source phone; legacy pointer rows ARE that phone.
+    -- Snapshot untouched: restore copies OUT of the cloud (see backup.restore).
     syncBusy[source] = true
-    local okRun, rows = pcall(backup.restore, profile.identity, s.identity, s.number or '', profile.deviceIdentity)
+    local okRun, rows = pcall(backup.restore, profile.identity, s.identity, s.number or '',
+        profile.deviceIdentity, state.character)
     syncBusy[source] = nil
     if not okRun then error(rows, 0) end
     print(('^3[sd-phone:sim]^0 restored backup %s -> %s for %s (%d rows)')

@@ -2,6 +2,10 @@
 ---sibling device resource (sd-tablet). Required FIRST - it shadows RegisterNUICallback and
 ---SendNUIMessage, so it has to be installed before any module that uses them loads.
 local companion = require 'client.companion'
+---@type table Optional prop screen (client.propscreen): the phone UI as a DUI on the held prop
+---(configs/phone.lua PropScreen, off by default = inert). Required right after the companion bus
+---so its push mirror / focus guard wrap that one.
+local propScreen = require 'client.propscreen'
 ---@type table sd-phone config root (configs/config.lua).
 local config = require 'configs.config'
 ---@type table Locale bridge (bridge.shared.locale): which catalogues this install ships.
@@ -197,6 +201,8 @@ require 'client.apps.clock'
 require 'client.apps.casino'
 require 'client.apps.cookie'
 require 'client.apps.stocks'
+require 'client.apps.cases'
+require 'client.casestore'
 require 'client.apps.games'
 require 'client.apps.settings'
 require 'client.apps.sim'
@@ -224,6 +230,20 @@ local currentSimState = nil
 
 ---@type string Current frame colour; always one of FRAME_COLORS.
 local currentFrameColor = config.Phone.DefaultColor or 'black'
+---@type boolean Whether the phone in use is a foldable: its item says so, and the server passes it
+---on with every open (shared/phonefold.lua).
+local currentFold = false
+---@type string The design of the phone in use: its item says so too.
+local currentLook = 'classic'
+
+---Records what kind of phone is in use, as the server said when it was opened.
+---@param fold any whether it is a foldable
+---@param look any its design
+local function setPhoneKind(fold, look)
+    currentFold = fold == true
+    currentLook = type(look) == 'string' and look or 'classic'
+    require('client.cases').setLook(currentLook)
+end
 ---@type table<string, boolean> Whitelist of valid frame colours (client.framecolors).
 local FRAME_COLORS = require 'client.framecolors'
 
@@ -262,6 +282,8 @@ local flashlightOn = false
 local cameraActive = false
 ---@type string Which surface owns the cell-cam while active: 'camera' or 'video' (video call).
 local cameraSurface = 'camera'
+---@type boolean True while a video call has the view, which hides the HUD and radar every frame.
+local videoView = false
 ---@type boolean True while the Camera app has handed the mouse to the game to aim the lens.
 local cameraCursorFree = false
 ---@type boolean True while a call is live; holds the pose up after the phone is put away.
@@ -298,9 +320,26 @@ local function broadcastHoldState()
     -- Widened from a bare colour so watchers weld the unfolded body too. A holder who is shut
     -- still broadcasts the plain string, which is what every older reader understands, and so
     -- does one whose fold never changes the prop, so watchers have no re-weld to do.
+    -- A case rides along as `k` and the phone's design and trims as `s`. Readers that predate them
+    -- only look at `c` and `f`.
+    -- A foldable says so as `h`, so watchers weld the hinged body even while it is shut.
+    local unfolded = pose.isFolded() and pose.foldChangesProp()
+    local cases = require 'client.cases'
+    local case, style = cases.broadcast(currentFrameColor), cases.style()
+    local hinged = currentFold and config.Phone.Foldable == true
     LocalPlayer.state:set('sdPhone',
-        (pose.isFolded() and pose.foldChangesProp()) and { c = currentFrameColor, f = true } or currentFrameColor, true)
+        (unfolded or case or style or hinged)
+            and { c = currentFrameColor, f = unfolded or nil, k = case, s = style, h = hinged or nil }
+            or currentFrameColor, true)
 end
+
+-- The case or the phone's style changed (put on, taken off, picked in Settings): re-dress the phone
+-- in hand and tell watchers.
+AddEventHandler('sd-phone:client:cases:changed', function()
+    pose.reweld()
+    broadcastHoldState()
+    SendNUIMessage({ action = 'sd-phone:phoneLook', data = { look = currentLook } })
+end)
 
 ---Pushes the current state into the pose module, which starts or stops the held clip to match,
 ---then broadcasts the result.
@@ -310,6 +349,7 @@ local function updatePose()
         torch  = flashlightOn,
         camera = cameraActive,
         color  = currentFrameColor,
+        fold   = currentFold,
         call   = callActive,
         callUi = not callMinimised,
     })
@@ -319,7 +359,9 @@ end
 -- The four control sets the phone suppresses, as data. They are handed to ox_lib's
 -- lib.disableControls, which keeps ONE refcounted set and re-asserts all of it in a single call per
 -- frame - so the thread below toggles a group when the state changes rather than reissuing the same
--- two dozen DisableControlAction calls every frame regardless of whether anything moved.
+-- two dozen DisableControlAction calls every frame regardless of whether anything moved. The Camera
+-- app, a video call and the scripted lens add their own keys to the same set, and that thread is the
+-- one that applies it.
 
 ---@type integer[] INPUT_FRONTEND_PAUSE and its alternate; held whenever the phone is on screen.
 local CONTROLS_PAUSE <const> = { 199, 200 }
@@ -361,25 +403,39 @@ end
 
 ---@type boolean True while the per-frame input thread is running.
 local inputThreadRunning = false
+---@type integer Frames the pause group stays held after the phone closes, or the closing keypress
+---opens the escape menu.
+local PAUSE_TAIL <const> = 15
 
----Runs ONE per-frame thread per open: holds the pause control down unconditionally, and with
----AllowMovement on also suppresses combat, mouse-look, weapon-wheel and chat.
+---Whether a camera surface is still up: the Camera app's viewfinder, a video call or the scripted
+---lens. Each adds its own keys to the shared set, so the input thread keeps applying it for them
+---even once the phone has been put away.
+---@return boolean
+local function surfaceUp()
+    return cameraActive or videoView or phonecam.active()
+end
+
+---Runs THE per-frame input thread: the only caller of lib.disableControls() and the only place the
+---HUD is hidden for a video call. While the phone is open it holds the pause control down, and with
+---AllowMovement on also suppresses combat, mouse-look, weapon-wheel and chat; while a camera surface
+---is up it keeps applying the keys that surface added, phone open or not.
 ---
 ---The mouse-look group is dropped while the Camera app's Alt toggle has the lens, because
 ---suppressing it there makes the lens immovable. DisablePlayerFiring is not a control, so it stays
 ---a native and stays inside the frame loop.
 ---
----The pause group is held for a few frames past the close, or the closing keypress opens the escape
----menu. The outer loop exists so a reopen DURING that trailing hold rejoins rather than dying with
----the flag about to clear, which would leave an open phone suppressing nothing; nothing yields
----between the break and the flag clearing, so an open can never be refused by a thread on its way
----out.
+---The pause group is held for PAUSE_TAIL frames past the close. A reopen during that hold, or a
+---surface still up, keeps the thread running rather than letting it die with the flag about to
+---clear, which would leave an open phone suppressing nothing; nothing yields between the break and
+---the flag clearing, so an open can never be refused by a thread on its way out.
 local function startInputThread()
     if inputThreadRunning then return end
     inputThreadRunning = true
     CreateThread(function()
+        local tail = 0
         while true do
-            while phoneState.open do
+            if phoneState.open then
+                tail = PAUSE_TAIL
                 setControlGroup(CONTROLS_PAUSE, true)
 
                 ---@type boolean Whether the movement suppression applies this frame.
@@ -398,26 +454,22 @@ local function startInputThread()
                 setControlGroup(CONTROLS_JUMP, phoneState.locked)
 
                 if suppress then DisablePlayerFiring(cache.playerId, true) end
+            else
+                setControlGroup(CONTROLS_MOVEMENT, false)
+                setControlGroup(CONTROLS_LOOK, false)
+                setControlGroup(CONTROLS_DIGITS, false)
+                setControlGroup(CONTROLS_JUMP, false)
 
-                lib.disableControls()
-                Wait(0)
+                local held = tail > 0
+                if held then tail = tail - 1 end
+                setControlGroup(CONTROLS_PAUSE, held)
+                if not held and not surfaceUp() then break end
             end
 
-            setControlGroup(CONTROLS_PAUSE, true)
-            setControlGroup(CONTROLS_MOVEMENT, false)
-            setControlGroup(CONTROLS_LOOK, false)
-            setControlGroup(CONTROLS_DIGITS, false)
-            setControlGroup(CONTROLS_JUMP, false)
-
-            local held = 0
-            while held < 15 and not phoneState.open do
-                lib.disableControls()
-                held = held + 1
-                Wait(0)
-            end
-            if not phoneState.open then break end
+            if videoView then HideHudAndRadarThisFrame() end
+            lib.disableControls()
+            Wait(0)
         end
-        setControlGroup(CONTROLS_PAUSE, false)
         inputThreadRunning = false
     end)
 end
@@ -453,15 +505,18 @@ local function exitLookMode()
 end
 
 ---Tracks the Camera app's cell-cam state, then re-syncs the pose and keep-input. Payload coerced
----to a strict boolean.
+---to a strict boolean. A surface coming up starts the input thread, which applies the keys it added
+---and hides the HUD for a video call, whether or not the phone is open.
 ---@param on any truthy while the cell-cam view is live
 ---@param surface string|nil which surface owns it: 'video' for the video call, otherwise the Camera app
 AddEventHandler('sd-phone:client:cameraMode', function(on, surface)
     cameraActive  = on and true or false
     cameraSurface = surface == 'video' and 'video' or 'camera'
+    if cameraSurface == 'video' then videoView = cameraActive end
     if not cameraActive then cameraCursorFree = false end
     updatePose()
     syncKeepInput()
+    if cameraActive then startInputThread() end
 end)
 
 ---Tracks whether a call is live and whether its screen has been minimised away, then re-syncs the
@@ -568,6 +623,8 @@ local function RevealPhone()
             locked    = phoneState.locked,
             battery   = phoneState.battery,
             frameColor = currentFrameColor,
+            phoneLook = currentLook,
+            shellFollowsPhone = (config.Shells or {}).FollowPhone ~= false,
             carrier   = config.StatusBar.Carrier,
             signal    = service.active() and service.bars() or config.StatusBar.SignalBars,
             showWifi  = config.StatusBar.ShowWifi,
@@ -597,7 +654,7 @@ local function RevealPhone()
         },
     })
 
-    pushWeather(true)
+    pushWeather()
 
     SendNUIMessage({
         action = 'sd-phone:session',
@@ -613,17 +670,29 @@ local function RevealPhone()
     CreateThread(PushInstalledApps)
 end
 
+---The data profile a SIM snapshot acts as: the device or character identity, or the SIM number
+---under DataOwner 'sim'. Nil without unique phones, where every phone shares one profile.
+---@param simState table|nil a currentSimState snapshot
+---@return string|nil
+local function appsProfileOf(simState)
+    return simState and (simState.profile or simState.number) or nil
+end
+
 ---Fetches the acting profile's installed apps + home layout and pushes them into the NUI of
----whichever device is on screen. Runs as the open follow-up and again after a cloud-backup
----restore replaces the profile data.
+---whichever device is on screen. Runs as the open follow-up, after a SIM push that switched the
+---acting phone, and after a cloud-backup restore replaces the profile data. The answer is dropped
+---when the profile changed during the round-trip, since it belongs to the phone left behind.
 function PushInstalledApps()
+    local profile = appsProfileOf(currentSimState)
     local installedRes = lib.callback.await('sd-phone:server:apps:list', false)
     -- Re-checked after the round-trip: the device may have been put away while the server
     -- answered, and a push into a screen nobody is looking at reopens it on stale apps.
     if not (phoneState.open or companion.companionOpen) then return end
+    if profile ~= appsProfileOf(currentSimState) then return end
     SendNUIMessage({
         action = 'sd-phone:apps',
         data   = {
+            profile       = installedRes and installedRes.data and installedRes.data.profile or nil,
             installedApps = (installedRes and installedRes.success and installedRes.data and installedRes.data.installed) or {},
             homeLayout    = (installedRes and installedRes.success and installedRes.data and installedRes.data.layout) or nil,
         },
@@ -664,7 +733,7 @@ end
 local function OpenPhone(silent)
     if phoneState.open then return true end
 
-    local res = lib.callback.await('sd-phone:server:phone:resolveOpen', false, currentFrameColor)
+    local res, fold, look = lib.callback.await('sd-phone:server:phone:resolveOpen', false, currentFrameColor, currentFold, currentLook)
     if not res then
         if not silent then
             notify.show({ description = locale.t('phone.noPhone', 'You don\'t have a phone.'), type = 'error' })
@@ -683,6 +752,7 @@ local function OpenPhone(silent)
         currentSimState = nil
     end
     if FRAME_COLORS[color] then currentFrameColor = color end
+    setPhoneKind(fold, look)
     RevealPhone()
     return phoneState.open
 end
@@ -692,6 +762,9 @@ local function TogglePhone()
     if phoneState.open then ClosePhone() return end
     OpenPhone()
 end
+
+-- Prop screen: ESC / vehicle / full-screen hand-offs close and reopen through the normal paths.
+propScreen.bind(ClosePhone, OpenPhone)
 
 -- Keybind wiring. lib.addKeybind registers the +/- command pair and the mapping together, refuses
 -- to fire while the pause menu is up, and clears both halves out of the chat suggestion list. It
@@ -762,7 +835,9 @@ lib.addKeybind({
 ---@param simPending boolean|nil true while the server resolves the SIM in the background (unique phones)
 ---@param deviceHint string|nil the used phone's device identity, read synchronously from its
 ---item metadata: a DIFFERENT device than the last snapshot seeds the switch at reveal time
-RegisterNetEvent('sd-phone:client:openFromItem', function(color, sim, simPending, deviceHint)
+---@param fold boolean|nil whether the used phone is a foldable
+---@param look string|nil the design of the used phone
+RegisterNetEvent('sd-phone:client:openFromItem', function(color, sim, simPending, deviceHint, fold, look)
     -- Only the server's item-use handler has proven ownership. Another client resource can raise
     -- this event locally, and then source is not a number, so that goes through the gate instead.
     if type(source) ~= 'number' then
@@ -770,6 +845,7 @@ RegisterNetEvent('sd-phone:client:openFromItem', function(color, sim, simPending
         return
     end
     if color and FRAME_COLORS[color] then currentFrameColor = color end
+    setPhoneKind(fold, look)
     if sim then
         currentSimState = { hasSim = sim.hasSim == true, number = sim.number }
     elseif simPending then
@@ -793,17 +869,23 @@ end)
 ---@param state { enabled: boolean, hasSim: boolean, number: string|nil, device: boolean|nil, profile: string|nil, color: string|nil }
 RegisterNetEvent('sd-phone:client:simState', function(state)
     if type(state) ~= 'table' then return end
+    local previousProfile = appsProfileOf(currentSimState)
     currentSimState = state.enabled and {
         hasSim  = state.hasSim == true,
         number  = state.number,
         device  = state.device == true,
         profile = state.profile,
     } or nil
-    -- The active SIM'd phone's colour wins: a pending keybind open answered with the owned
+    -- The session's active phone's colour wins: a pending keybind open answered with the owned
     -- colour before the resolve, so correct the frame, the hand prop and the UI rail here.
     if state.color and FRAME_COLORS[state.color] then
-        if state.color ~= currentFrameColor then
+        local fold, look = currentFold, currentLook
+        if state.fold ~= nil then fold = state.fold == true end
+        if type(state.look) == 'string' then look = state.look end
+        if state.color ~= currentFrameColor or fold ~= currentFold or look ~= currentLook then
             currentFrameColor = state.color
+            setPhoneKind(fold, look)
+            SendNUIMessage({ action = 'sd-phone:phoneLook', data = { look = currentLook } })
             -- Push the colour first, then re-weld: a prop already in hand keeps the old model
             -- otherwise, since attaching no-ops while one exists.
             updatePose()
@@ -828,6 +910,9 @@ RegisterNetEvent('sd-phone:client:simState', function(state)
                 profile = state.profile,
             },
         })
+        if appsProfileOf(currentSimState) ~= previousProfile then
+            CreateThread(PushInstalledApps)
+        end
     end
 end)
 
@@ -1081,7 +1166,7 @@ end
 ---@param open boolean|nil true to unfold, false to fold, nil to toggle
 ---@return boolean open the state it settled on
 local function SetFolded(open)
-    if not FOLDABLE or not phoneState.open then return foldOpen end
+    if not FOLDABLE or not currentFold or not phoneState.open then return foldOpen end
     if open == nil then open = not foldOpen end
     foldOpen = open == true
     SendNUIMessage({
@@ -1102,6 +1187,16 @@ end
 -- it, since the player did not ask for a fold, they just opened the phone.
 local function AnnounceFold()
     if not FOLDABLE then return end
+    if not currentFold then
+        foldOpen = false
+        SendNUIMessage({
+            action = 'sd-phone:fold',
+            data   = { foldable = false, openW = FOLD_OPEN_W, open = false, restore = true },
+        })
+        pose.setFolded(false)
+        broadcastHoldState()
+        return
+    end
     foldOpen = LoadFold()
     SendNUIMessage({
         action = 'sd-phone:fold',
@@ -1126,7 +1221,7 @@ end)
 ---@param data { open: boolean }|nil
 ---@param cb fun(result: table) NUI response
 RegisterNUICallback('sd-phone:fold:set', function(data, cb)
-    if FOLDABLE then
+    if FOLDABLE and currentFold then
         foldOpen = data ~= nil and data.open == true
         pose.setFolded(foldOpen)
         broadcastHoldState()

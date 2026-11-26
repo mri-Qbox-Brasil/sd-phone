@@ -244,6 +244,7 @@ local function createRace(track, startInSeconds, class)
         members        = {},
         joinedCount    = 0,
         isCustom       = false,
+        boardAnnounced = startInSeconds <= math.max(0, int(GEN.BoardLeadMinutes, 5)) * 60,
     }
 
     Races[id] = race
@@ -377,6 +378,22 @@ function racegen.isFull(race)
     return race.joinedCount >= race.maxRacers
 end
 
+---Tells every phone the board list moved once a lobby comes within BoardLeadMinutes of its start.
+---Nothing else happens at that moment, so without this push a sign-up board would only appear on
+---the client's slow fallback poll. Each lobby is announced once.
+function racegen.announceBoards()
+    local now  = os.time()
+    local lead = math.max(0, int(GEN.BoardLeadMinutes, 5)) * 60
+    local due  = false
+    for _, race in pairs(Races) do
+        if not race.boardAnnounced and race.start and int(race.startsAt, 0) - now <= lead then
+            race.boardAnnounced = true
+            due = true
+        end
+    end
+    if due then broadcastChanged() end
+end
+
 ---Every lobby the caller can see, soonest first.
 ---@param cid string citizenid
 ---@return table[] races
@@ -423,20 +440,25 @@ function racegen.boards(cid)
 end
 
 ---Registers the caller for a lobby and takes their buy-in. The only place an entry fee is ever
----charged: if anything after the debit refuses the seat, the money goes back in the same call.
+---charged: if anything after the debit refuses the seat, the money goes back in the same call. The
+---class is judged on the car the server sees them driving, so the seat is refused on foot.
 ---@param src integer player server id
 ---@param cid string citizenid
 ---@param raceId any
----@param modelHash any joaat hash of the vehicle they are sitting in, 0 on foot
 ---@return table envelope
-function racegen.join(src, cid, raceId, modelHash)
+function racegen.join(src, cid, raceId)
     local race = racegen.get(raceId)
     if not race then return util.fail('racing.raceNoLongerAvailable', 'That race is no longer available') end
     if racegen.hasStarted(race) then return util.fail('racing.raceHasAlreadyStarted', 'That race has already started') end
     if racegen.isMember(race, cid) then return util.fail('racing.alreadyRegisteredRace', 'You are already registered for that race') end
     if racegen.isFull(race) then return util.fail('racing.raceFull', 'That race is full') end
 
-    local mine = actions.classForModel(modelHash)
+    local model = actions.drivenModel(src)
+    if not model then
+        return util.fail('racing.driveToJoinRace', "Get in the driver's seat of the car you will race to join")
+    end
+
+    local mine = actions.classForModel(model)
     if actions.classRank(mine) > actions.classRank(race.class) then
         return util.fail('racing.vehicleClassRaceTopsOut', 'Your vehicle is class {yours} and this race tops out at class {max}', { yours = mine, max = race.class })
     end
@@ -678,12 +700,12 @@ function racegen.start()
             Wait(1000)
             waited = waited + 1000
         end
-        generateBatch()
+        if generateBatch() > 0 then broadcastChanged() end
 
         while true do
             Wait(interval)
             prune()
-            generateBatch()
+            if generateBatch() > 0 then broadcastChanged() end
         end
     end)
 end

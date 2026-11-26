@@ -239,12 +239,14 @@ end
 ---live in the `player_groups` table and are surfaced on the player object as PlayerData.jobs
 ---(jobName -> grade level); plain QBCore and ESX have no multi-job model, so there it is just the
 ---active job. The active job is always included and always wins, since it carries the live grade.
+---Nil, not an empty map, when the player can't be resolved: an empty map means "holds no job", and
+---a caller syncing saved jobs against it would drop every one of them.
 ---@param source number player server id
----@return table<string, integer> jobs jobName -> grade level
+---@return table<string, integer>|nil jobs jobName -> grade level
 function job.getAll(source)
     local out = {}
     local p = player_mod.get(source)
-    if not p then return out end
+    if not p then return nil end
 
     if framework.qb then
         local jobs = p.PlayerData and p.PlayerData.jobs
@@ -359,5 +361,149 @@ function job.leave(source, jobName)
     local ok = pcall(function() exports.qbx_core:RemovePlayerFromJob(cid, jobName) end)
     return ok
 end
+
+---@type table<integer, { name: string, duty: boolean|nil }> Active job and duty per source, as the
+---framework's own events last reported them.
+local indexBySrc = {}
+---@type table<string, table<integer, true>> Sources per active job name; the reverse of indexBySrc.
+local indexByJob = {}
+---@type boolean Whether the index has been filled from the player list. It is built on first use,
+---so a server that never asks for it pays nothing, and a resource restart starts from a full pass.
+local indexBuilt = false
+---@type integer How often the heal pass wakes, in ms.
+local HEAL_MS = 1000
+---@type integer How long one heal pass takes to re-read every connected player, in ms. The events
+---below are the real feed; this only bounds how long a missed one can leave an entry wrong.
+local HEAL_PASS_MS = 60000
+
+---Moves a source to `name` in the index, or out of it when `name` is nil or empty.
+---@param src integer
+---@param name string|nil
+---@param duty boolean|nil
+local function place(src, name, duty)
+    if not src then return end
+    local prev = indexBySrc[src]
+    if prev and prev.name ~= name then
+        local set = indexByJob[prev.name]
+        if set then
+            set[src] = nil
+            if next(set) == nil then indexByJob[prev.name] = nil end
+        end
+    end
+    if type(name) ~= 'string' or name == '' then
+        indexBySrc[src] = nil
+        return
+    end
+    indexBySrc[src] = { name = name, duty = duty }
+    local set = indexByJob[name]
+    if not set then set = {}; indexByJob[name] = set end
+    set[src] = true
+end
+
+---Re-reads one player's active job and duty from the framework into the index: one framework
+---lookup, which is what every event below costs instead of a walk over every connected player.
+---@param src integer|nil
+local function refresh(src)
+    src = tonumber(src)
+    if not src then return end
+    local st = job.getState(src)
+    place(src, st and st.name, st and st.duty)
+end
+
+---Fills the index from every connected player. Runs once; the events keep it current after that.
+local function buildIndex()
+    indexBuilt = true
+    for _, id in ipairs(GetPlayers()) do refresh(tonumber(id)) end
+end
+
+---Sources whose ACTIVE job is `jobName`, served from an index the framework's job, duty, load and
+---drop events keep current, so a fan-out to one job costs a lookup per member rather than one per
+---connected player. A fresh array each call.
+---@param jobName string|nil
+---@return integer[] sources
+function job.sourcesOf(jobName)
+    if not indexBuilt then buildIndex() end
+    local out = {}
+    local set = jobName and indexByJob[jobName]
+    if set then
+        for src in pairs(set) do out[#out + 1] = src end
+    end
+    return out
+end
+
+---The indexed active job and duty of one source, without a framework lookup. Duty is nil where the
+---framework has none (ESX, ND), exactly as getDuty reports it. Nil when the source holds no job.
+---@param src integer
+---@return { name: string, duty: boolean|nil }|nil
+function job.indexed(src)
+    if not indexBuilt then buildIndex() end
+    return indexBySrc[src]
+end
+
+---Puts a source back on the framework's live answer at once. For a caller that has just changed a
+---player's job itself and must not wait for the framework's event.
+---@param src integer
+function job.reindex(src)
+    if indexBuilt then refresh(src) end
+end
+
+AddEventHandler('playerDropped', function() place(tonumber(source), nil) end)
+
+if framework.qb then
+    AddEventHandler('QBCore:Server:OnJobUpdate', function(src, data)
+        if type(data) == 'table' then
+            place(tonumber(src), data.name, data.onduty == true)
+        else
+            refresh(src)
+        end
+    end)
+    AddEventHandler('QBCore:Server:SetDuty', function(src, onDuty)
+        local hit = indexBySrc[tonumber(src) or -1]
+        if hit then hit.duty = onDuty == true else refresh(src) end
+    end)
+    -- QBox drops the primary job through RemovePlayerFromJob without an OnJobUpdate.
+    AddEventHandler('qbx_core:server:onGroupUpdate', function(src) refresh(src) end)
+    AddEventHandler('QBCore:Server:PlayerLoaded', function(p)
+        local data = p and p.PlayerData
+        if type(data) ~= 'table' then return end
+        local j = data.job
+        place(tonumber(data.source), j and j.name, j and j.onduty == true)
+    end)
+    AddEventHandler('QBCore:Server:OnPlayerUnload', function(src) place(tonumber(src), nil) end)
+elseif framework.name == 'esx' then
+    AddEventHandler('esx:setJob', function(src, data)
+        place(tonumber(src), type(data) == 'table' and data.name or nil, nil)
+    end)
+    AddEventHandler('esx:playerLoaded', function(src) refresh(src) end)
+    AddEventHandler('esx:playerLogout', function(src) place(tonumber(src), nil) end)
+elseif framework.name == 'ox' then
+    AddEventHandler('ox:setGroup', function(src) refresh(src) end)
+    AddEventHandler('ox:setActiveGroup', function(src) refresh(src) end)
+    AddEventHandler('ox:playerLoaded', function(src) refresh(src) end)
+    AddEventHandler('ox:playerLogout', function(src) place(tonumber(src), nil) end)
+elseif framework.name == 'nd' then
+    AddEventHandler('ND:characterLoaded', function(character) refresh(character and character.source) end)
+    AddEventHandler('ND:updateCharacter', function(character) refresh(character and character.source) end)
+    AddEventHandler('ND:characterUnloaded', function(src) place(tonumber(src), nil) end)
+end
+
+---Re-reads a slice of the connected players every HEAL_MS so the whole list is covered once per
+---HEAL_PASS_MS. A job set by writing player data directly fires none of the events above, and
+---this bounds how long such an entry can stay wrong. Idle until the index is first used.
+CreateThread(function()
+    local cursor = 0
+    while true do
+        Wait(HEAL_MS)
+        if indexBuilt then
+            local list = GetPlayers()
+            local n = #list
+            local batch = math.min(n, math.max(1, math.ceil(n * HEAL_MS / HEAL_PASS_MS)))
+            for _ = 1, batch do
+                cursor = cursor % n + 1
+                refresh(tonumber(list[cursor]))
+            end
+        end
+    end
+end)
 
 return job

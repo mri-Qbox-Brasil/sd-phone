@@ -71,9 +71,3 @@ const WORDS: string[] = [
 export function randomWord(): string {
     return WORDS[Math.floor(Math.random() * WORDS.length)].toUpperCase();
 }
-
-export function wordForGame(gameId: string): string {
-    let h = 0;
-    for (let i = 0; i < gameId.length; i++) h = (Math.imul(h, 31) + gameId.charCodeAt(i)) >>> 0;
-    return WORDS[h % WORDS.length].toUpperCase();
-}

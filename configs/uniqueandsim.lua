@@ -102,12 +102,21 @@ return {
     -- thief can never restore someone else's backup. Enabling it remembers which phone profile
     -- belongs to the character; restoring on a new SIM copies that profile's data (messages,
     -- contacts, photos, notes, settings, app logins, ...) onto the new SIM's profile. The old
-    -- SIM keeps the old number and the data that was on it.
+    -- SIM keeps the old number and the data that was on it. Nothing of value is ever backed up
+    -- (stocks app cash and shares, casino chips, owned phone cases): it stays with the phone
+    -- that holds it. Mailbox sign-ins and group chats come back only as they stood at backup
+    -- time, and only while the old phone still has them. Outside DataOwner = 'character' a
+    -- backup never restores onto the phone it was taken from. Backups made before cloud
+    -- snapshots can't be restored; the player is asked to make a new one.
     Backup = {
         Enabled = true,
 
         -- How many phones one character can back up at once (each holds a full cloud snapshot).
         -- Enabling backup on another phone past the cap asks the player to delete one first.
         MaxProfiles = 3,
+
+        -- Minimum time between two restores by one character, in seconds. A restore adds the
+        -- backup's rows again, so back-to-back backup/restore rounds would pile up duplicates.
+        RestoreCooldown = 600,
     },
 }

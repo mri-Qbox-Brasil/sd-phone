@@ -18,7 +18,7 @@ import { logOutOrSwitch, switchTargetLabel } from '@/shared/logOutOrSwitch';
 import { IG, type Comment as IGComment, type Post, type ProfileData, type User } from './data';
 import {
     apiActivity, apiAddComment, apiAddStory, apiComments, apiCounts, apiCreate, apiDeleteAccount, apiDeletePost, apiDeleteStory, apiDismissNotification, apiShareProfile, apiExplore, apiFeed,
-    apiFollowRequests, apiPost, apiProfile, apiProfilePosts, apiStories, apiToggleCommentLike,
+    apiFollowRequests, apiPost, apiProfile, apiProfilePosts, apiRespondFollow, apiStories, apiToggleCommentLike,
     apiToggleLike, apiToggleSave, apiUpdateProfile, apiWatch, mapComment,
     type ActivityItem, type FollowUser, type LiveEntry, type NewStory, type ProfileView, type SrvComment, type StoryGroup,
 } from './photogramApi';
@@ -144,9 +144,6 @@ export function Photogram({ onClose: _onClose }: { onClose: () => void }) {
         refreshCounts();
     }, [authed, refreshMe, refreshHome, refreshCounts]);
 
-    // Everything on screen belongs to the account that was signed in, so a change refetches all
-    // of it and closes whatever was open: a post detail or a profile drill-in from the previous
-    // account would otherwise sit there looking like this account's.
     const afterAccountChange = useCallback(() => {
         clearSessionState('photogram:');
         setTab('home');
@@ -171,8 +168,6 @@ export function Photogram({ onClose: _onClose }: { onClose: () => void }) {
 
     useEffect(() => { if (authed) refreshCounts(); }, [dmOpen, authed, refreshCounts]);
 
-    // Content pushes reach only the phones showing Photogram, so the subscription follows the
-    // foreground. AppDeck keeps this subtree alive, so returning to it is not a remount.
     const deckActive = useDeckActive();
     const wasActive = useRef(deckActive);
     useEffect(() => {
@@ -181,7 +176,6 @@ export function Photogram({ onClose: _onClose }: { onClose: () => void }) {
         return () => { apiWatch(false); };
     }, [deckActive]);
 
-    // Re-sync on the way back in: anything pushed while this phone was not listening is missed.
     const [syncNonce, setSyncNonce] = useState(0);
     useEffect(() => {
         const returning = deckActive && !wasActive.current;
@@ -189,7 +183,6 @@ export function Photogram({ onClose: _onClose }: { onClose: () => void }) {
         if (returning) setSyncNonce(n => n + 1);
     }, [deckActive]);
 
-    // The same refresh for someone who never left the screen while driving back into coverage.
     useRefreshOnReconnect(useCallback(() => setSyncNonce(n => n + 1), []));
 
     useEffect(() => {
@@ -373,7 +366,7 @@ export function Photogram({ onClose: _onClose }: { onClose: () => void }) {
                 <TabPane key={tab} animate={animateNav}>
                     {tab === 'home'     && <Feed posts={posts} me={myUser} stories={stories} lives={lives} hasOwnStory={hasOwnStory} onLike={toggleLike} onDoubleLike={likeOn} onSave={toggleSave} onComment={openComments} onOpenStory={setStoryIdx} onOpenLive={setViewLive} onAddStory={() => setStoryMenu(true)} onOpenDMs={() => setDmOpen(true)} onOpenProfile={setViewHandle} onShare={setSharePost} onDelete={setPendingDelete} onRefresh={refreshHome} dmCount={counts.dms} />}
                     {tab === 'search'   && <Explore posts={explore} onOpen={p => setDetail(p)} onOpenProfile={setViewHandle} />}
-                    {tab === 'activity' && <Activity items={activity} requests={requests} onRespond={async (h, a) => { await import('./photogramApi').then(m => m.apiRespondFollow(h, a)); refreshActivity(); }} onOpenProfile={setViewHandle} onOpenPost={openDetailById} onDismiss={(id) => { setActivity(prev => prev.filter(n => n.id !== id)); void apiDismissNotification(id); }} />}
+                    {tab === 'activity' && <Activity items={activity} requests={requests} onRespond={async (h, a) => { await apiRespondFollow(h, a); refreshActivity(); }} onOpenProfile={setViewHandle} onOpenPost={openDetailById} onDismiss={(id) => { setActivity(prev => prev.filter(n => n.id !== id)); void apiDismissNotification(id); }} />}
                     {tab === 'profile'  && me && <Profile profile={me} posts={myGrid} story={stories.find(g => g.isMe) ?? null} onEdit={() => setEditing(true)} onShare={() => setSharingMe(true)} onOpenPost={p => setDetail(p)} onOpenFollows={(handle, kind) => setFollows({ handle, kind })} onOpenStory={setProfileStory} />}
                 </TabPane>
             </div>
